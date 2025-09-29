@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import { BsThreeDots } from "react-icons/bs";
 import { theme } from "@/styles/theme";

@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     // Data is now provided by the client - no need to fetch
 
     // Build detailed coaching context with clear explanations
-    let contextSections = [];
+    const contextSections = [];
 
     // Session information
     contextSections.push(`SESSION INFORMATION:
@@ -44,13 +44,13 @@ export async function POST(request: NextRequest) {
     // Global coaching rules
     if (globalRules && globalRules.length > 0) {
       contextSections.push(`GLOBAL COACHING METHODOLOGY RULES:
-${globalRules.map((rule: any) => `- ${rule.content}`).join('\n')}`);
+${globalRules.map((rule: { content: string }) => `- ${rule.content}`).join('\n')}`);
     }
 
     // Team-specific rules
     if (teamRules && teamRules.length > 0) {
       contextSections.push(`TEAM-SPECIFIC COACHING RULES:
-${teamRules.map((rule: any) => `- ${rule.content}`).join('\n')}`);
+${teamRules.map((rule: { content: string }) => `- ${rule.content}`).join('\n')}`);
     }
 
     // Conversation context

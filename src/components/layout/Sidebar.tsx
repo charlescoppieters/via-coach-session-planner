@@ -90,7 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     let retryCount = 0;
     const maxRetries = 3;
     const baseDelay = 1000;
-    let channel: any;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     let isSubscribed = false;
 
     const handleTeamChange = async () => {
@@ -188,7 +188,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     let retryCount = 0;
     const maxRetries = 3;
     const baseDelay = 1000;
-    let channel: any;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     let isSubscribed = false;
 
     const handleSessionChange = async () => {

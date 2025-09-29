@@ -74,8 +74,7 @@ export const TeamDetails: React.FC<TeamDetailsProps> = ({
     let retryCount = 0;
     const maxRetries = 3;
     const baseDelay = 1000;
-    let channel: any;
-    let isSubscribed = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const handleTeamChange = (payload: { new?: Team; old?: Team; eventType: string }) => {
       try {

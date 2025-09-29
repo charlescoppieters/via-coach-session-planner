@@ -46,7 +46,14 @@ export default function LoginPage() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
   // Teams data for AI context
-  const [teamsData, setTeamsData] = useState<any[]>([]);
+  const [teamsData, setTeamsData] = useState<Array<{
+    id: string;
+    name: string;
+    age_group: string;
+    skill_level: string;
+    player_count: number;
+    session_duration: number;
+  }>>([]);
 
   // Auto-redirect authenticated users
   useEffect(() => {
@@ -158,7 +165,14 @@ export default function LoginPage() {
     setTriggerNewTeam(prev => prev + 1);
   };
 
-  const handleTeamsLoad = (teams: any[]) => {
+  const handleTeamsLoad = (teams: Array<{
+    id: string;
+    name: string;
+    age_group: string;
+    skill_level: string;
+    player_count: number;
+    session_duration: number;
+  }>) => {
     setTeamsData(teams);
   };
 
