@@ -75,6 +75,7 @@ export const TeamDetails: React.FC<TeamDetailsProps> = ({
     const maxRetries = 3;
     const baseDelay = 1000;
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    let isSubscribed = false;
 
     const handleTeamChange = (payload: { new?: Team; old?: Team; eventType: string }) => {
       try {
@@ -91,8 +92,8 @@ export const TeamDetails: React.FC<TeamDetailsProps> = ({
       try {
         channel = supabase
           .channel(`team-details-${teamId}-${Date.now()}`)
-          .on(
-            'postgres_changes',
+          .on<Team>(
+            'postgres_changes' as never,
             {
               event: 'UPDATE',
               schema: 'public',
