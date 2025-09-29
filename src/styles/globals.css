@@ -1,0 +1,56 @@
+/* Reset and base styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Input placeholder styling */
+.input::placeholder {
+  color: #a0a0a0;
+  opacity: 1;
+}
+
+.input::-webkit-input-placeholder {
+  color: #a0a0a0;
+}
+
+.input::-moz-placeholder {
+  color: #a0a0a0;
+  opacity: 1;
+}
+
+.input:-ms-input-placeholder {
+  color: #a0a0a0;
+}
+
+.input::-ms-input-placeholder {
+  color: #a0a0a0;
+}
+
+/* Button hover and focus states */
+.button:focus-visible {
+  outline: 2px solid #d4af37;
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Animations */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
