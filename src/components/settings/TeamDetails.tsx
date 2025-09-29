@@ -92,7 +92,7 @@ export const TeamDetails: React.FC<TeamDetailsProps> = ({
         channel = supabase
           .channel(`team-details-${teamId}-${Date.now()}`)
           .on(
-            'postgres_changes' as any,
+            'postgres_changes',
             {
               event: 'UPDATE',
               schema: 'public',
