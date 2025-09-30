@@ -14,6 +14,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onChange,
   onSend
 }) => {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSend();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -29,7 +34,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         borderTop: '1px solid rgba(255, 255, 255, 0.1)',
       }}
     >
-      <div
+      <form
+        onSubmit={handleSubmit}
         style={{
           display: 'flex',
           gap: theme.spacing.md,
@@ -65,7 +71,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           }}
         />
         <button
-          onClick={onSend}
+          type="submit"
           style={{
             padding: `${theme.spacing.md} ${theme.spacing.lg}`,
             background: theme.colors.gold.main,
@@ -90,7 +96,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         >
           Send
         </button>
-      </div>
+      </form>
     </div>
   );
 };
