@@ -67,7 +67,8 @@ async function ensureCoachProfile(userId: string, email: string) {
       const coachData: CoachInsert = {
         auth_user_id: userId,
         email,
-        name: email.split('@')[0], // Default name from email
+        name: email.split('@')[0], // Default name from email (can be customized in onboarding)
+        onboarding_completed: false, // New users must complete onboarding wizard
       }
 
       const { data: newCoach, error: createError } = await supabase

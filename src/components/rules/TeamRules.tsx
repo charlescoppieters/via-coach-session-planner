@@ -21,17 +21,28 @@ interface CoachingRuleWithEditing extends CoachingRule {
 interface TeamRulesProps {
   teamId: string;
   teamName: string;
+  hideHeader?: boolean;
+  onRegisterAddHandler?: (handler: () => void) => void;
 }
 
 export const TeamRules: React.FC<TeamRulesProps> = ({
   teamId,
   teamName,
+  hideHeader = false,
+  onRegisterAddHandler,
 }) => {
   const [rules, setRules] = useState<CoachingRuleWithEditing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isAddingRule, setIsAddingRule] = useState(false);
   const [newRuleContent, setNewRuleContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Register the add handler with parent
+  useEffect(() => {
+    if (onRegisterAddHandler) {
+      onRegisterAddHandler(() => setIsAddingRule(true));
+    }
+  }, [onRegisterAddHandler]);
 
   // Fetch team rules
   useEffect(() => {
@@ -308,71 +319,86 @@ export const TeamRules: React.FC<TeamRulesProps> = ({
       }}
     >
       {/* Team Rules Header */}
-      <div
-        style={{
-          padding: `${theme.spacing.md} ${theme.spacing.lg}`,
-          flexShrink: 0,
-        }}
-      >
-        <h4
+      {!hideHeader && (
+        <div
           style={{
-            color: theme.colors.text.primary,
-            fontSize: theme.typography.fontSize.base,
-            fontWeight: theme.typography.fontWeight.semibold,
-            margin: '0 0 ' + theme.spacing.xs + ' 0',
+            padding: `${theme.spacing.md} ${theme.spacing.lg}`,
+            flexShrink: 0,
           }}
         >
-          Team-Specific Coaching Rules
-        </h4>
-        <p
-          style={{
-            color: theme.colors.text.muted,
-            fontSize: theme.typography.fontSize.sm,
-            margin: 0,
-          }}
-        >
-          Rules that apply only to this team
-        </p>
-      </div>
-
-      {/* Add Rule Section */}
-      <div
-        style={{
-          padding: `0 ${theme.spacing.lg} ${theme.spacing.md} ${theme.spacing.lg}`,
-          flexShrink: 0,
-        }}
-      >
-        {!isAddingRule ? (
-          <button
-            onClick={() => setIsAddingRule(true)}
+          <div
             style={{
-              width: '100%',
-              padding: theme.spacing.md,
-              backgroundColor: 'transparent',
-              color: theme.colors.gold.main,
-              border: `2px dashed ${theme.colors.gold.main}`,
-              borderRadius: theme.borderRadius.md,
-              fontSize: theme.typography.fontSize.base,
-              fontWeight: theme.typography.fontWeight.semibold,
-              cursor: 'pointer',
-              transition: theme.transitions.fast,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = theme.colors.background.tertiary;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent';
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: theme.spacing.xs,
             }}
           >
-            + Add Team Rule
-          </button>
-        ) : (
+            <h4
+              style={{
+                color: theme.colors.text.primary,
+                fontSize: theme.typography.fontSize.base,
+                fontWeight: theme.typography.fontWeight.semibold,
+                margin: 0,
+              }}
+            >
+              Team-Specific Coaching Rules
+            </h4>
+            {!isAddingRule && (
+              <button
+                onClick={() => setIsAddingRule(true)}
+                style={{
+                  padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+                  backgroundColor: 'transparent',
+                  color: theme.colors.gold.main,
+                  border: `2px dashed ${theme.colors.gold.main}`,
+                  borderRadius: theme.borderRadius.md,
+                  fontSize: theme.typography.fontSize.sm,
+                  fontWeight: theme.typography.fontWeight.semibold,
+                  cursor: 'pointer',
+                  opacity: 0.7,
+                  transition: theme.transitions.fast,
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.colors.background.tertiary;
+                  e.currentTarget.style.opacity = '1';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.opacity = '0.7';
+                }}
+              >
+                + Add Team Rule
+              </button>
+            )}
+          </div>
+          <p
+            style={{
+              color: theme.colors.text.muted,
+              fontSize: theme.typography.fontSize.sm,
+              margin: 0,
+            }}
+          >
+            Rules that apply only to this team
+          </p>
+        </div>
+      )}
+
+      {/* Add Rule Form - Only shown when adding */}
+      {isAddingRule && (
+        <div
+          style={{
+            padding: `${theme.spacing.md} ${theme.spacing.lg}`,
+            flexShrink: 0,
+          }}
+        >
           <div
             style={{
               padding: theme.spacing.lg,
               backgroundColor: theme.colors.background.tertiary,
               borderRadius: theme.borderRadius.md,
-              border: `1px solid ${theme.colors.gold.main}`,
+              border: 'none',
             }}
           >
             <textarea
@@ -411,20 +437,25 @@ export const TeamRules: React.FC<TeamRulesProps> = ({
                 disabled={isSaving}
                 style={{
                   padding: `${theme.spacing.xs} ${theme.spacing.md}`,
-                  backgroundColor: 'transparent',
-                  color: theme.colors.text.muted,
-                  border: `1px solid ${theme.colors.text.muted}`,
+                  backgroundColor: theme.colors.background.primary,
+                  color: theme.colors.text.primary,
+                  border: 'none',
                   borderRadius: theme.borderRadius.sm,
                   fontSize: theme.typography.fontSize.sm,
+                  fontWeight: theme.typography.fontWeight.semibold,
                   cursor: isSaving ? 'not-allowed' : 'pointer',
                   opacity: isSaving ? 0.6 : 1,
                   transition: theme.transitions.fast,
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = theme.colors.background.secondary;
+                  if (!isSaving) {
+                    e.currentTarget.style.backgroundColor = theme.colors.background.tertiary;
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent';
+                  if (!isSaving) {
+                    e.currentTarget.style.backgroundColor = theme.colors.background.primary;
+                  }
                 }}
               >
                 Cancel
@@ -434,22 +465,23 @@ export const TeamRules: React.FC<TeamRulesProps> = ({
                 disabled={!newRuleContent.trim() || isSaving}
                 style={{
                   padding: `${theme.spacing.xs} ${theme.spacing.md}`,
-                  backgroundColor: (newRuleContent.trim() && !isSaving) ? theme.colors.gold.main : theme.colors.text.muted,
-                  color: theme.colors.text.primary,
+                  backgroundColor: theme.colors.gold.main,
+                  color: theme.colors.background.primary,
                   border: 'none',
                   borderRadius: theme.borderRadius.sm,
                   fontSize: theme.typography.fontSize.sm,
                   fontWeight: theme.typography.fontWeight.semibold,
                   cursor: (newRuleContent.trim() && !isSaving) ? 'pointer' : 'not-allowed',
+                  opacity: (newRuleContent.trim() && !isSaving) ? 1 : 0.5,
                   transition: theme.transitions.fast,
                 }}
                 onMouseEnter={(e) => {
-                  if (newRuleContent.trim()) {
+                  if (newRuleContent.trim() && !isSaving) {
                     e.currentTarget.style.backgroundColor = theme.colors.gold.light;
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (newRuleContent.trim()) {
+                  if (newRuleContent.trim() && !isSaving) {
                     e.currentTarget.style.backgroundColor = theme.colors.gold.main;
                   }
                 }}
@@ -467,8 +499,8 @@ export const TeamRules: React.FC<TeamRulesProps> = ({
               </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Rules List */}
       <div
@@ -498,6 +530,17 @@ export const TeamRules: React.FC<TeamRulesProps> = ({
                 color: theme.colors.text.muted,
               }}
             />
+          </div>
+        ) : rules.length === 0 ? (
+          <div
+            style={{
+              textAlign: 'center',
+              padding: theme.spacing.xl,
+              color: theme.colors.text.secondary,
+              fontSize: theme.typography.fontSize.base,
+            }}
+          >
+            No team rules yet. Add your first rule above.
           </div>
         ) : (
           rules.map((rule) => (

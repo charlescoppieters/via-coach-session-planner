@@ -21,6 +21,9 @@ export type Database = {
           email: string
           id: string
           name: string
+          onboarding_completed: boolean
+          position: string | null
+          profile_picture: string | null
           updated_at: string
         }
         Insert: {
@@ -29,6 +32,9 @@ export type Database = {
           email: string
           id?: string
           name: string
+          onboarding_completed?: boolean
+          position?: string | null
+          profile_picture?: string | null
           updated_at?: string
         }
         Update: {
@@ -37,6 +43,9 @@ export type Database = {
           email?: string
           id?: string
           name?: string
+          onboarding_completed?: boolean
+          position?: string | null
+          profile_picture?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -91,36 +100,48 @@ export type Database = {
       }
       sessions: {
         Row: {
+          age_group: string
           coach_id: string
           content: string
           created_at: string
+          duration: number
           id: string
           notes: string | null
-          title: string
+          player_count: number
           session_date: string
+          skill_level: string
           team_id: string
+          title: string
           updated_at: string
         }
         Insert: {
+          age_group: string
           coach_id: string
           content: string
           created_at?: string
+          duration: number
           id?: string
           notes?: string | null
-          title: string
+          player_count: number
           session_date: string
+          skill_level: string
           team_id: string
+          title: string
           updated_at?: string
         }
         Update: {
+          age_group?: string
           coach_id?: string
           content?: string
           created_at?: string
+          duration?: number
           id?: string
           notes?: string | null
-          title?: string
+          player_count?: number
           session_date?: string
+          skill_level?: string
           team_id?: string
+          title?: string
           updated_at?: string
         }
         Relationships: [
@@ -140,11 +161,57 @@ export type Database = {
           },
         ]
       }
+      session_attendance: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string | null
+          player_id: string
+          session_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          player_id: string
+          session_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          player_id?: string
+          session_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_attendance_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_attendance_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       teams: {
         Row: {
           age_group: string
           coach_id: string
           created_at: string
+          gender: string | null
           id: string
           name: string
           player_count: number
@@ -157,6 +224,7 @@ export type Database = {
           age_group: string
           coach_id: string
           created_at?: string
+          gender?: string | null
           id?: string
           name: string
           player_count: number
@@ -169,6 +237,7 @@ export type Database = {
           age_group?: string
           coach_id?: string
           created_at?: string
+          gender?: string | null
           id?: string
           name?: string
           player_count?: number
@@ -183,6 +252,66 @@ export type Database = {
             columns: ["coach_id"]
             isOneToOne: false
             referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      players: {
+        Row: {
+          age: number | null
+          coach_id: string
+          created_at: string
+          gender: string | null
+          id: string
+          name: string
+          position: string | null
+          target_1: string | null
+          target_2: string | null
+          target_3: string | null
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          age?: number | null
+          coach_id: string
+          created_at?: string
+          gender?: string | null
+          id?: string
+          name: string
+          position?: string | null
+          target_1?: string | null
+          target_2?: string | null
+          target_3?: string | null
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          age?: number | null
+          coach_id?: string
+          created_at?: string
+          gender?: string | null
+          id?: string
+          name?: string
+          position?: string | null
+          target_1?: string | null
+          target_2?: string | null
+          target_3?: string | null
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "players_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "players_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
         ]
@@ -342,3 +471,11 @@ export type CoachingRuleUpdate = Database['public']['Tables']['coaching_rules'][
 export type Session = Database['public']['Tables']['sessions']['Row']
 export type SessionInsert = Database['public']['Tables']['sessions']['Insert']
 export type SessionUpdate = Database['public']['Tables']['sessions']['Update']
+
+export type SessionAttendance = Database['public']['Tables']['session_attendance']['Row']
+export type SessionAttendanceInsert = Database['public']['Tables']['session_attendance']['Insert']
+export type SessionAttendanceUpdate = Database['public']['Tables']['session_attendance']['Update']
+
+export type Player = Database['public']['Tables']['players']['Row']
+export type PlayerInsert = Database['public']['Tables']['players']['Insert']
+export type PlayerUpdate = Database['public']['Tables']['players']['Update']

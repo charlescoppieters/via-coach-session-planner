@@ -19,25 +19,23 @@ export const TeamCard: React.FC<TeamCardProps> = ({
     <div
       onClick={onClick}
       style={{
-        padding: theme.spacing.lg,
+        padding: theme.spacing.md,
+        backgroundColor: isSelected ? 'rgba(239, 191, 4, 0.1)' : 'transparent',
+        border: isSelected ? `2px solid ${theme.colors.gold.main}` : '2px solid transparent',
         borderRadius: theme.borderRadius.md,
-        background: isSelected
-          ? theme.colors.gold.main
-          : `linear-gradient(135deg, ${theme.colors.background.tertiary} 0%, ${theme.colors.background.secondary} 100%)`,
         cursor: 'pointer',
         transition: theme.transitions.fast,
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+        marginBottom: theme.spacing.sm,
+        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.4)',
       }}
       onMouseEnter={(e) => {
         if (!isSelected) {
-          e.currentTarget.style.transform = 'translateY(-2px)';
-          e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.15)';
+          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
         }
       }}
       onMouseLeave={(e) => {
         if (!isSelected) {
-          e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+          e.currentTarget.style.backgroundColor = 'transparent';
         }
       }}
     >
@@ -57,7 +55,7 @@ export const TeamCard: React.FC<TeamCardProps> = ({
           gridTemplateColumns: '1fr 1fr',
           gap: theme.spacing.xs,
           fontSize: theme.typography.fontSize.sm,
-          color: isSelected ? theme.colors.text.primary : theme.colors.text.muted,
+          color: theme.colors.text.secondary,
         }}
       >
         <span>{team.age_group}</span>

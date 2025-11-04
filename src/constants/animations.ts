@@ -61,14 +61,14 @@ export const mainVariants: Variants = {
   animate: {
     opacity: 1,
     transition: {
-      duration: 0.3,
+      duration: 0.6,
       ease: "easeOut"
     }
   },
   exit: {
     opacity: 0,
     transition: {
-      duration: 0.2,
+      duration: 0.3,
       ease: "easeIn"
     }
   }
@@ -81,14 +81,14 @@ export const settingsVariants: Variants = {
   animate: {
     opacity: 1,
     transition: {
-      duration: 0.3,
+      duration: 0.6,
       ease: "easeOut"
     }
   },
   exit: {
     opacity: 0,
     transition: {
-      duration: 0.2,
+      duration: 0.3,
       ease: "easeIn"
     }
   }
@@ -127,6 +127,26 @@ export const sessionItemVariants: Variants = {
     opacity: 0,
     transition: {
       duration: 0.2,
+      ease: "easeIn"
+    }
+  }
+};
+
+export const onboardingVariants: Variants = {
+  initial: {
+    opacity: 0
+  },
+  animate: {
+    opacity: 1,
+    transition: {
+      duration: 0.8,
+      ease: "easeOut"
+    }
+  },
+  exit: {
+    opacity: 0,
+    transition: {
+      duration: 0.3,
       ease: "easeIn"
     }
   }

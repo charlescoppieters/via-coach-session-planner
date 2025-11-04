@@ -219,8 +219,8 @@ export const TeamList: React.FC<TeamListProps> = ({
         flexDirection: 'column',
         backgroundColor: theme.colors.background.secondary,
         borderRadius: theme.borderRadius.lg,
-        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
-        overflow: 'hidden',
+        boxShadow: theme.shadows.xl,
+        overflow: 'visible',
       }}
     >
       {/* Header */}
@@ -228,7 +228,7 @@ export const TeamList: React.FC<TeamListProps> = ({
         style={{
           padding: theme.spacing.lg,
           background: `linear-gradient(135deg, ${theme.colors.background.secondary} 0%, ${theme.colors.background.tertiary} 100%)`,
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          borderBottom: `1px solid ${theme.colors.border.secondary}`,
         }}
       >
         <h3
@@ -260,7 +260,7 @@ export const TeamList: React.FC<TeamListProps> = ({
           padding: theme.spacing.lg,
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
+          overflow: 'visible',
         }}
       >
         {/* Coaching Methodology Card */}
@@ -274,18 +274,18 @@ export const TeamList: React.FC<TeamListProps> = ({
               : `linear-gradient(135deg, ${theme.colors.background.tertiary} 0%, ${theme.colors.background.secondary} 100%)`,
             cursor: 'pointer',
             transition: theme.transitions.fast,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+            boxShadow: theme.shadows.md,
           }}
           onMouseEnter={(e) => {
             if (selectedTeamId !== 'global') {
               e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.15)';
+              e.currentTarget.style.boxShadow = theme.shadows.lg;
             }
           }}
           onMouseLeave={(e) => {
             if (selectedTeamId !== 'global') {
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+              e.currentTarget.style.boxShadow = theme.shadows.md;
             }
           }}
         >
@@ -383,6 +383,7 @@ export const TeamList: React.FC<TeamListProps> = ({
             display: 'flex',
             flexDirection: 'column',
             gap: theme.spacing.md,
+            padding: theme.spacing.sm,
           }}
         >
           {isLoading ? (

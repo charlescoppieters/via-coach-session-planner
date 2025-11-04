@@ -28,7 +28,7 @@ export const TeamForm: React.FC<TeamFormProps> = ({
         borderRadius: theme.borderRadius.md,
         border: isEditing
           ? `1px solid ${theme.colors.gold.main}`
-          : `1px solid rgba(212, 175, 55, 0.2)`,
+          : `1px solid ${theme.colors.border.secondary}`,
       }}
     >
       {/* Age Group */}

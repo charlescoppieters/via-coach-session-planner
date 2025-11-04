@@ -153,7 +153,7 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
           justifyContent: 'center',
           background: theme.colors.background.secondary,
           borderRadius: theme.borderRadius.lg,
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
+          boxShadow: theme.shadows.xl,
           color: theme.colors.text.muted,
           fontSize: theme.typography.fontSize.lg,
         }}
@@ -173,7 +173,7 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
           justifyContent: 'center',
           background: theme.colors.background.secondary,
           borderRadius: theme.borderRadius.lg,
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
+          boxShadow: theme.shadows.xl,
         }}
       >
         <CgSpinnerAlt
@@ -199,7 +199,7 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
         flexDirection: 'column',
         background: theme.colors.background.secondary,
         borderRadius: theme.borderRadius.lg,
-        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
         overflow: 'hidden',
         position: 'relative',
       }}
@@ -209,8 +209,8 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
         style={{
           position: 'relative',
           padding: '20px',
-          background: `linear-gradient(135deg, ${theme.colors.background.secondary} 0%, ${theme.colors.background.tertiary} 100%)`,
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          background: theme.colors.background.secondary,
+          borderBottom: `1px solid ${theme.colors.border.secondary}`,
           minHeight: 'auto',
         }}
       >
@@ -293,7 +293,7 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
                 saveStatus === 'error' ? theme.colors.status.error :
                 saveStatus === 'saved' ? theme.colors.text.disabled :
                 theme.colors.gold.main,
-              color: theme.colors.text.primary,
+              color: theme.colors.background.primary,
               border: 'none',
               borderRadius: theme.borderRadius.md,
               fontSize: theme.typography.fontSize.sm,
@@ -373,7 +373,7 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
               left: 0,
               right: 0,
               bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.6)',
+              backgroundColor: 'rgba(19, 25, 26, 0.8)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

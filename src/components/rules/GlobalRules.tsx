@@ -20,14 +20,23 @@ interface CoachingRuleWithEditing extends CoachingRule {
 
 interface GlobalRulesProps {
   coachId: string | null;
+  hideHeader?: boolean;
+  onRegisterAddHandler?: (handler: () => void) => void;
 }
 
-export const GlobalRules: React.FC<GlobalRulesProps> = ({ coachId }) => {
+export const GlobalRules: React.FC<GlobalRulesProps> = ({ coachId, hideHeader = false, onRegisterAddHandler }) => {
   const [rules, setRules] = useState<CoachingRuleWithEditing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isAddingRule, setIsAddingRule] = useState(false);
   const [newRuleContent, setNewRuleContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Register the add handler with parent
+  useEffect(() => {
+    if (onRegisterAddHandler) {
+      onRegisterAddHandler(() => setIsAddingRule(true));
+    }
+  }, [onRegisterAddHandler]);
 
   // Fetch global rules
   useEffect(() => {
@@ -282,35 +291,74 @@ export const GlobalRules: React.FC<GlobalRulesProps> = ({ coachId }) => {
 
   return (
     <>
-      <div
-        style={{
-          padding: theme.spacing.lg,
-          background: theme.colors.gold.main,
-          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-        }}
-      >
-        <h3
+      {!hideHeader && (
+        <div
           style={{
-            color: theme.colors.text.primary,
-            fontSize: theme.typography.fontSize.lg,
-            fontWeight: theme.typography.fontWeight.semibold,
-            margin: 0,
-            letterSpacing: '-0.025em',
+            padding: theme.spacing.lg,
+            background: theme.colors.gold.main,
+            borderBottom: `1px solid ${theme.colors.border.secondary}`,
           }}
         >
-          Coaching Methodology
-        </h3>
-        <p
-          style={{
-            color: theme.colors.text.primary,
-            fontSize: theme.typography.fontSize.sm,
-            margin: `${theme.spacing.xs} 0 0 0`,
-            opacity: 0.8,
-          }}
-        >
-          Define your coaching philosophy and rules that apply to all teams
-        </p>
-      </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: theme.spacing.xs,
+            }}
+          >
+            <h3
+              style={{
+                color: theme.colors.text.primary,
+                fontSize: theme.typography.fontSize.lg,
+                fontWeight: theme.typography.fontWeight.semibold,
+                margin: 0,
+                letterSpacing: '-0.025em',
+              }}
+            >
+              Coaching Methodology
+            </h3>
+            {!isAddingRule && (
+              <button
+                onClick={() => setIsAddingRule(true)}
+                style={{
+                  padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+                  backgroundColor: 'transparent',
+                  color: theme.colors.text.primary,
+                  border: `2px dashed ${theme.colors.text.primary}`,
+                  borderRadius: theme.borderRadius.md,
+                  fontSize: theme.typography.fontSize.sm,
+                  fontWeight: theme.typography.fontWeight.semibold,
+                  cursor: 'pointer',
+                  opacity: 0.7,
+                  transition: theme.transitions.fast,
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.opacity = '1';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.opacity = '0.7';
+                }}
+              >
+                + Add Global Rule
+              </button>
+            )}
+          </div>
+          <p
+            style={{
+              color: theme.colors.text.primary,
+              fontSize: theme.typography.fontSize.sm,
+              margin: 0,
+              opacity: 0.8,
+            }}
+          >
+            Define your coaching philosophy and rules that apply to all teams
+          </p>
+        </div>
+      )}
 
       <div
         style={{
@@ -320,45 +368,20 @@ export const GlobalRules: React.FC<GlobalRulesProps> = ({ coachId }) => {
           overflow: 'hidden',
         }}
       >
-        {/* Add Rule Section */}
-        <div
-          style={{
-            padding: theme.spacing.lg,
-            paddingBottom: theme.spacing.md,
-            flexShrink: 0,
-          }}
-        >
-          {!isAddingRule ? (
-            <button
-              onClick={() => setIsAddingRule(true)}
-              style={{
-                width: '100%',
-                padding: theme.spacing.md,
-                backgroundColor: 'transparent',
-                color: theme.colors.gold.main,
-                border: `2px dashed ${theme.colors.gold.main}`,
-                borderRadius: theme.borderRadius.md,
-                fontSize: theme.typography.fontSize.base,
-                fontWeight: theme.typography.fontWeight.semibold,
-                cursor: 'pointer',
-                transition: theme.transitions.fast,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = theme.colors.background.tertiary;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }}
-            >
-              + Add Coaching Rule
-            </button>
-          ) : (
+        {/* Add Rule Form - Only shown when adding */}
+        {isAddingRule && (
+          <div
+            style={{
+              padding: `${theme.spacing.md} ${theme.spacing.lg}`,
+              flexShrink: 0,
+            }}
+          >
             <div
               style={{
                 padding: theme.spacing.lg,
                 backgroundColor: theme.colors.background.tertiary,
                 borderRadius: theme.borderRadius.md,
-                border: `1px solid ${theme.colors.gold.main}`,
+                border: 'none',
               }}
             >
               <textarea
@@ -397,20 +420,25 @@ export const GlobalRules: React.FC<GlobalRulesProps> = ({ coachId }) => {
                   disabled={isSaving}
                   style={{
                     padding: `${theme.spacing.xs} ${theme.spacing.md}`,
-                    backgroundColor: 'transparent',
-                    color: theme.colors.text.muted,
-                    border: `1px solid ${theme.colors.text.muted}`,
+                    backgroundColor: theme.colors.background.primary,
+                    color: theme.colors.text.primary,
+                    border: 'none',
                     borderRadius: theme.borderRadius.sm,
                     fontSize: theme.typography.fontSize.sm,
+                    fontWeight: theme.typography.fontWeight.semibold,
                     cursor: isSaving ? 'not-allowed' : 'pointer',
                     opacity: isSaving ? 0.6 : 1,
                     transition: theme.transitions.fast,
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = theme.colors.background.secondary;
+                    if (!isSaving) {
+                      e.currentTarget.style.backgroundColor = theme.colors.background.tertiary;
+                    }
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
+                    if (!isSaving) {
+                      e.currentTarget.style.backgroundColor = theme.colors.background.primary;
+                    }
                   }}
                 >
                   Cancel
@@ -420,22 +448,23 @@ export const GlobalRules: React.FC<GlobalRulesProps> = ({ coachId }) => {
                   disabled={!newRuleContent.trim() || isSaving}
                   style={{
                     padding: `${theme.spacing.xs} ${theme.spacing.md}`,
-                    backgroundColor: (newRuleContent.trim() && !isSaving) ? theme.colors.gold.main : theme.colors.text.muted,
-                    color: theme.colors.text.primary,
+                    backgroundColor: theme.colors.gold.main,
+                    color: theme.colors.background.primary,
                     border: 'none',
                     borderRadius: theme.borderRadius.sm,
                     fontSize: theme.typography.fontSize.sm,
                     fontWeight: theme.typography.fontWeight.semibold,
                     cursor: (newRuleContent.trim() && !isSaving) ? 'pointer' : 'not-allowed',
+                    opacity: (newRuleContent.trim() && !isSaving) ? 1 : 0.5,
                     transition: theme.transitions.fast,
                   }}
                   onMouseEnter={(e) => {
-                    if (newRuleContent.trim()) {
+                    if (newRuleContent.trim() && !isSaving) {
                       e.currentTarget.style.backgroundColor = theme.colors.gold.light;
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (newRuleContent.trim()) {
+                    if (newRuleContent.trim() && !isSaving) {
                       e.currentTarget.style.backgroundColor = theme.colors.gold.main;
                     }
                   }}
@@ -453,8 +482,8 @@ export const GlobalRules: React.FC<GlobalRulesProps> = ({ coachId }) => {
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Rules List */}
         <div
@@ -489,9 +518,9 @@ export const GlobalRules: React.FC<GlobalRulesProps> = ({ coachId }) => {
             <div
               style={{
                 textAlign: 'center',
-                color: theme.colors.text.muted,
-                fontSize: theme.typography.fontSize.sm,
-                padding: theme.spacing.lg,
+                padding: theme.spacing.xl,
+                color: theme.colors.text.secondary,
+                fontSize: theme.typography.fontSize.base,
               }}
             >
               No coaching rules yet. Add your first rule above.

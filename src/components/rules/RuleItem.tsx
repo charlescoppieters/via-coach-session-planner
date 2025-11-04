@@ -53,7 +53,7 @@ export const RuleItem: React.FC<RuleItemProps> = ({
         padding: theme.spacing.lg,
         backgroundColor: rule.is_active ? theme.colors.background.tertiary : theme.colors.background.secondary,
         borderRadius: theme.borderRadius.md,
-        border: `1px solid ${rule.is_active ? 'rgba(212, 175, 55, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+        borderLeft: rule.isEditing ? 'none' : `3px solid ${rule.is_active ? theme.colors.gold.main : 'transparent'}`,
         opacity: rule.is_active ? 1 : 0.6,
         transition: theme.transitions.fast,
       }}
@@ -93,19 +93,20 @@ export const RuleItem: React.FC<RuleItemProps> = ({
               onClick={() => onCancel(rule.id)}
               style={{
                 padding: `${theme.spacing.xs} ${theme.spacing.md}`,
-                backgroundColor: 'transparent',
-                color: theme.colors.text.muted,
-                border: `1px solid ${theme.colors.text.muted}`,
+                backgroundColor: theme.colors.background.primary,
+                color: theme.colors.text.primary,
+                border: 'none',
                 borderRadius: theme.borderRadius.sm,
                 fontSize: theme.typography.fontSize.sm,
+                fontWeight: theme.typography.fontWeight.semibold,
                 cursor: 'pointer',
                 transition: theme.transitions.fast,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = theme.colors.background.secondary;
+                e.currentTarget.style.backgroundColor = theme.colors.background.tertiary;
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.backgroundColor = theme.colors.background.primary;
               }}
             >
               Cancel
@@ -115,13 +116,14 @@ export const RuleItem: React.FC<RuleItemProps> = ({
               disabled={!editContent.trim()}
               style={{
                 padding: `${theme.spacing.xs} ${theme.spacing.md}`,
-                backgroundColor: editContent.trim() ? theme.colors.gold.main : theme.colors.text.muted,
-                color: theme.colors.text.primary,
+                backgroundColor: theme.colors.gold.main,
+                color: theme.colors.background.primary,
                 border: 'none',
                 borderRadius: theme.borderRadius.sm,
                 fontSize: theme.typography.fontSize.sm,
                 fontWeight: theme.typography.fontWeight.semibold,
                 cursor: editContent.trim() ? 'pointer' : 'not-allowed',
+                opacity: editContent.trim() ? 1 : 0.5,
                 transition: theme.transitions.fast,
               }}
               onMouseEnter={(e) => {
@@ -228,7 +230,7 @@ export const RuleItem: React.FC<RuleItemProps> = ({
                   justifyContent: 'center',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#ff6b6b';
+                  e.currentTarget.style.color = theme.colors.status.error;
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.color = theme.colors.text.muted;

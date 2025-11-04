@@ -31,7 +31,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       style={{
         padding: theme.spacing.lg,
         background: `linear-gradient(135deg, ${theme.colors.background.secondary} 0%, ${theme.colors.background.tertiary} 100%)`,
-        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+        borderTop: `1px solid ${theme.colors.border.secondary}`,
       }}
     >
       <form
@@ -77,7 +77,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             background: theme.colors.gold.main,
             border: 'none',
             borderRadius: theme.borderRadius.xl,
-            color: theme.colors.text.primary,
+            color: theme.colors.background.primary,
             fontSize: theme.typography.fontSize.base,
             fontWeight: theme.typography.fontWeight.semibold,
             cursor: 'pointer',

@@ -1,25 +1,25 @@
 export const theme = {
   colors: {
     background: {
-      primary: '#081111',      // Deep black like the screenshot
-      secondary: '#2a2a2a',    // Slightly lighter for cards/panels
-      tertiary: '#333333',     // For elevated elements
+      primary: '#13191A',      // Charcoal background
+      secondary: '#081111',    // Darker background for content areas
+      tertiary: '#13191A',     // Unified charcoal for elevated elements
     },
     gold: {
-      light: '#e3be70',        // Light gold for highlights
-      main: '#d6ab5a',         // Classic gold for main accents
-      dark: '#ca9a46',         // Darker gold for secondary accents
+      light: '#EFBF04',        // Bright gold for highlights
+      main: '#EFBF04',         // Bright gold for main accents
+      dark: '#EFBF04',         // Bright gold for secondary accents
     },
     text: {
-      primary: '#ffffff',      // Softer white text
-      secondary: '#e0e0e0',    // Slightly muted white
-      muted: '#a0a0a0',       // For less important text
+      primary: '#FFFFFF',      // Pure white text
+      secondary: '#717171',    // Gray text for secondary elements
+      muted: '#FFFFFF',        // Pure white for less important text
       disabled: '#666666',     // For disabled elements
     },
     accent: {
-      gold: '#d4af37',         // For buttons, borders, input focus
-      goldHover: '#f4d03f',    // Hover states
-      goldPressed: '#b7950b',  // Pressed/active states
+      gold: '#EFBF04',         // Bright gold for buttons, borders, input focus
+      goldHover: '#FFD700',    // Lighter gold for hover states
+      goldPressed: '#D4A700',  // Darker gold for pressed/active states
     },
     status: {
       success: '#28a745',      // Success messages
@@ -30,7 +30,7 @@ export const theme = {
     border: {
       primary: '#444444',      // Default borders
       secondary: '#333333',    // Subtle borders
-      accent: '#d4af37',       // Gold borders for focus/active
+      accent: '#EFBF04',       // Gold borders for focus/active
     }
   },
 
@@ -109,41 +109,41 @@ export const theme = {
   components: {
     button: {
       primary: {
-        background: '#d4af37',
-        backgroundHover: '#f4d03f',
-        backgroundPressed: '#b7950b',
-        text: '#1a1a1a',
-        border: '#d4af37',
+        background: '#EFBF04',
+        backgroundHover: '#FFD700',
+        backgroundPressed: '#D4A700',
+        text: '#13191A',
+        border: '#EFBF04',
       },
       secondary: {
         background: 'transparent',
-        backgroundHover: '#2a2a2a',
-        backgroundPressed: '#333333',
-        text: '#d4af37',
-        border: '#d4af37',
+        backgroundHover: '#13191A',
+        backgroundPressed: '#13191A',
+        text: '#EFBF04',
+        border: '#EFBF04',
       },
     },
     input: {
-      background: '#2a2a2a',
-      backgroundFocus: '#333333',
+      background: '#13191A',
+      backgroundFocus: '#13191A',
       border: '#444444',
-      borderFocus: '#d4af37',
-      text: '#ffffff',
-      placeholder: '#a0a0a0',
+      borderFocus: '#EFBF04',
+      text: '#FFFFFF',
+      placeholder: '#FFFFFF',
     },
     chat: {
       userMessage: {
-        background: '#d4af37',
-        text: '#1a1a1a',
+        background: '#EFBF04',
+        text: '#13191A',
       },
       assistantMessage: {
-        background: '#2a2a2a',
-        text: '#ffffff',
+        background: '#13191A',
+        text: '#FFFFFF',
       },
       inputArea: {
-        background: '#2a2a2a',
+        background: '#13191A',
         border: '#444444',
-        borderFocus: '#d4af37',
+        borderFocus: '#EFBF04',
       }
     },
   }

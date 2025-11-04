@@ -8,6 +8,7 @@ export async function POST(request: NextRequest) {
       team,
       teamRules,
       globalRules,
+      players,
       currentContent,
       conversationHistory = [],
       message
@@ -53,6 +54,34 @@ ${globalRules.map((rule: { content: string }) => `- ${rule.content}`).join('\n')
 ${teamRules.map((rule: { content: string }) => `- ${rule.content}`).join('\n')}`);
     }
 
+    // Player Individual Development Plans (IDPs)
+    if (players && players.length > 0) {
+      const playerDetails = players.map((player: {
+        name: string;
+        age: number | null;
+        position: string | null;
+        gender: string | null;
+        target_1: string | null;
+        target_2: string | null;
+        target_3: string | null;
+      }) => {
+        const targets = [player.target_1, player.target_2, player.target_3]
+          .filter(Boolean)
+          .map((t, i) => `  Target ${i + 1}: ${t}`)
+          .join('\n');
+
+        const playerInfo = [];
+        playerInfo.push(player.name);
+        if (player.age) playerInfo.push(`Age ${player.age}`);
+        if (player.position) playerInfo.push(player.position);
+
+        return `- ${playerInfo.join(', ')}\n${targets || '  (No development targets set)'}`;
+      }).join('\n\n');
+
+      contextSections.push(`PLAYER INDIVIDUAL DEVELOPMENT PLANS (IDPs):
+${playerDetails}`);
+    }
+
     // Conversation context
     contextSections.push(`CONVERSATION CONTEXT:
 - Current session plan: The text content of the training session plan being edited
@@ -64,6 +93,14 @@ ${teamRules.map((rule: { content: string }) => `- ${rule.content}`).join('\n')}`
     const systemPrompt = `You are an expert football (soccer) coaching assistant helping UK-based coaches plan training sessions.
 
 ${coachingContext}
+
+⚠️ ABSOLUTE REQUIREMENT - SESSION DURATION:
+The session MUST be EXACTLY ${team.sessionDuration} minutes in total length. This is NON-NEGOTIABLE.
+- Calculate the total time of ALL activities including warm-up, drills, cool-down, water breaks, transitions
+- If activities exceed ${team.sessionDuration} minutes, reduce activity durations or remove activities
+- If activities are under ${team.sessionDuration} minutes, extend activity durations or add activities
+- NEVER create a session plan that totals more or less than ${team.sessionDuration} minutes
+- When modifying a session, ensure the TOTAL duration remains ${team.sessionDuration} minutes
 
 CRITICAL INSTRUCTIONS:
 You MUST analyze the coach's request and determine if it's:
@@ -89,7 +126,7 @@ RESPONSE RULES:
 1. Use "football" not "soccer" (UK terminology)
 2. Follow all coaching methodology and team rules listed above
 3. Provide age-appropriate activities for ${team.ageGroup}
-4. Ensure activities fit within ${team.sessionDuration} minutes
+4. CRITICAL: The TOTAL session duration MUST ALWAYS equal EXACTLY ${team.sessionDuration} minutes - verify all activity times add up correctly before responding
 5. For changes: preserve original formatting style exactly
 6. For changes: only modify what was specifically requested
 7. For questions: provide helpful, specific coaching advice
@@ -100,6 +137,10 @@ RESPONSE RULES:
 12. When listing items or steps, use clear formatting with newlines between each item for readability
 13. Never use a. b. c. lists, try to only use '-' and numbers for main items
 14. In the response message, if there are numbered lists, do not put a blank line (double new line) between the numbers and the items or between the numbers and the next list item
+15. Use player Individual Development Plan (IDP) data to inform your coaching advice and session planning decisions
+16. In chat responses (the "message" field), reference specific player development targets when relevant and explain how activities support those goals
+17. CRITICAL: In the actual session plan output (the "updated_session" field), keep content general and team-focused - do NOT include player names or player-specific IDP details
+18. All player-specific IDP explanations and individualized guidance should ONLY appear in chat messages, never in the session plan itself
 
 EXAMPLES:
 
@@ -107,7 +148,10 @@ Coach asks: "What's a good warm-up for U12s?"
 Response: {"intent": "question", "message": "For U12 players, I recommend this warm-up structure:\n\n1. Light jogging around the pitch (3-4 minutes)\n2. Dynamic stretches - leg swings, high knees, heel kicks\n3. Ball work - passing in pairs (short distances)\n4. Cone dribbling - simple touches to get feel for the ball\n5. Light movement games to engage them mentally\n\nThis builds from basic movement to football-specific skills. Would you like me to add this to your session plan?"}
 
 Coach says: "Add a 10-minute warm-up at the start"
-Response: {"intent": "change", "updated_session": "[complete updated session with warm-up added]", "message": "Added a 10-minute warm-up section at the beginning with light jogging, dynamic stretches, and ball work."}
+Response: {"intent": "change", "updated_session": "[complete updated session with warm-up added]", "message": "Added a 10-minute warm-up section at the beginning with light jogging, dynamic stretches, and ball work. I've adjusted the other activities to ensure the total session remains exactly ${team.sessionDuration} minutes."}
+
+Coach says: "Add a shooting drill"
+Response: {"intent": "question", "message": "I'd love to add a shooting drill! However, your current session is already at ${team.sessionDuration} minutes. Would you like me to:\n\n1. Replace an existing activity with a shooting drill\n2. Reduce the time on other activities to fit in a 10-15 minute shooting drill\n3. Suggest a specific activity to swap out\n\nLet me know your preference and I'll make the adjustment while keeping the session at ${team.sessionDuration} minutes total."}
 
 You MUST respond with valid JSON only - no other text before or after. Do not include any explanatory text, introductions, or commentary outside of the JSON structure. Start your response immediately with the opening curly brace { and end with the closing curly brace }.
 

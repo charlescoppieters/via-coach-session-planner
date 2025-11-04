@@ -5,20 +5,22 @@ import Image from "next/image";
 import { AnimatePresence, motion } from 'framer-motion';
 import { theme } from "@/styles/theme";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import { signInWithOTP, verifyOTP } from "@/lib/auth";
 import { isValidEmail } from "@/utils/validation";
-import { logoVariants, mainVariants, settingsVariants } from "@/constants/animations";
+import { logoVariants, mainVariants, settingsVariants, onboardingVariants } from "@/constants/animations";
 
 // Components
 import { AuthLoading } from "@/components/auth/AuthLoading";
 import { EmailScreen } from "@/components/auth/EmailScreen";
 import { OTPScreen } from "@/components/auth/OTPScreen";
+import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MainScreen } from "@/components/MainScreen";
-import { SettingsPanel } from "@/components/settings/SettingsPanel";
-import { TeamList } from "@/components/teams/TeamList";
-import { TeamDetails } from "@/components/settings/TeamDetails";
-import { GlobalRules } from "@/components/rules/GlobalRules";
+import { DashboardView } from "@/components/dashboard/DashboardView";
+import { PlayersView } from "@/components/players/PlayersView";
+import { MethodologyView } from "@/components/methodology/MethodologyView";
+import { SettingsView } from "@/components/settings/SettingsView";
 
 
 export default function LoginPage() {
@@ -26,12 +28,9 @@ export default function LoginPage() {
   const { user, coach, loading, signOut, refreshAuth } = useAuth();
 
   // Local UI state
-  const [currentScreen, setCurrentScreen] = useState<'email' | 'otp' | 'main' | 'settings'>('email');
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [currentScreen, setCurrentScreen] = useState<'email' | 'otp' | 'onboarding' | 'main' | 'settings'>('email');
+  const [currentView, setCurrentView] = useState<'sessions' | 'settings' | 'dashboard' | 'methodology' | 'players'>('dashboard');
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  const [selectedSettingsTeamId, setSelectedSettingsTeamId] = useState<string | null>(null);
-  const [triggerNewTeam, setTriggerNewTeam] = useState(0);
-  const [deletedTeamId, setDeletedTeamId] = useState<string | null>(null);
 
   // Local auth form state (only for the auth flow)
   const [email, setEmail] = useState('');
@@ -44,6 +43,7 @@ export default function LoginPage() {
 
   // Current session selection state
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [sessionMode, setSessionMode] = useState<'view' | 'edit'>('view');
 
   // Teams data for AI context
   const [teamsData, setTeamsData] = useState<Array<{
@@ -113,7 +113,22 @@ export default function LoginPage() {
       setTimeout(async () => {
         // Refresh auth context to ensure coach data is loaded
         await refreshAuth();
-        setCurrentScreen('main');
+
+        // Check if onboarding is completed
+        const { data: coachData } = await supabase
+          .from('coaches')
+          .select('onboarding_completed')
+          .eq('auth_user_id', data.user.id)
+          .single();
+
+        if (coachData && !coachData.onboarding_completed) {
+          // Show onboarding wizard
+          setCurrentScreen('onboarding');
+        } else {
+          // Go to main app
+          setCurrentScreen('main');
+        }
+
         setIsLoading(false);
       }, 3400);
     }
@@ -136,12 +151,19 @@ export default function LoginPage() {
     // Clear session and team state to prevent cross-account contamination
     setCurrentSessionId(null);
     setSelectedTeamId(null);
-    setSelectedSettingsTeamId(null);
-    setTriggerNewTeam(0);
-    setDeletedTeamId(null);
     // AuthContext signOut handles the rest
     await signOut();
     setIsLoading(false);
+  };
+
+  // ============================================
+  // Onboarding Handler
+  // ============================================
+  const handleOnboardingComplete = async () => {
+    // Refresh auth to get updated coach data
+    await refreshAuth();
+    // Redirect to main app
+    setCurrentScreen('main');
   };
 
   // ============================================
@@ -157,14 +179,27 @@ export default function LoginPage() {
     setCurrentScreen('main');
   };
 
+  const handleNavigateToSession = (sessionId: string, mode: 'view' | 'edit') => {
+    setCurrentSessionId(sessionId);
+    setSessionMode(mode);
+    setCurrentView('sessions');
+  };
+
+  const handleClearSession = () => {
+    setCurrentSessionId(null);
+    setSessionMode('view');
+  };
+
+  // Clear session state when switching away from sessions view
+  useEffect(() => {
+    if (currentView !== 'sessions') {
+      handleClearSession();
+    }
+  }, [currentView]);
+
   // ============================================
   // Team Handlers (simplified)
   // ============================================
-  const handleAddNewTeam = () => {
-    // Trigger the TeamList to create a new team
-    setTriggerNewTeam(prev => prev + 1);
-  };
-
   const handleTeamsLoad = (teams: Array<{
     id: string;
     name: string;
@@ -193,8 +228,8 @@ export default function LoginPage() {
       {/* Show auth success loading */}
       {authSuccess && isLoading && <AuthLoading type="success" />}
 
-      {/* Logo for auth screens */}
-      {currentScreen !== 'main' && currentScreen !== 'settings' && (
+      {/* Logo for auth screens (not onboarding) */}
+      {currentScreen !== 'main' && currentScreen !== 'settings' && currentScreen !== 'onboarding' && (
         <motion.div
           variants={logoVariants}
           initial="initial"
@@ -213,211 +248,147 @@ export default function LoginPage() {
         </motion.div>
       )}
 
-      {/* Sidebar for main and settings screens */}
-      {(currentScreen === 'main' || currentScreen === 'settings') && (
-        <Sidebar
-          currentScreen={currentScreen}
-          selectedTeamId={selectedTeamId || ''}
-          setSelectedTeamId={setSelectedTeamId}
-          currentSessionId={currentSessionId}
-          onNewSession={handleNewSession}
-          onAddNewTeam={handleAddNewTeam}
-          onSessionClick={handleSessionClick}
-          onSettingsClick={() => setCurrentScreen(currentScreen === 'settings' ? 'main' : 'settings')}
-          onLogout={handleLogout}
-          setCurrentScreen={setCurrentScreen}
-          sidebarExpanded={sidebarExpanded}
-          setSidebarExpanded={setSidebarExpanded}
-          onTeamsLoad={handleTeamsLoad}
-        />
+      {/* Onboarding Wizard */}
+      {currentScreen === 'onboarding' && coach && (
+        <motion.div
+          key="onboarding"
+          variants={onboardingVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+        >
+          <OnboardingWizard
+            coachId={coach.id}
+            initialName={coach.name}
+            onComplete={handleOnboardingComplete}
+          />
+        </motion.div>
       )}
 
-      {/* Content - centered vertically for auth screens */}
-      <div style={{
-        position: (currentScreen === 'main' || currentScreen === 'settings') ? 'static' : 'absolute',
-        top: (currentScreen === 'main' || currentScreen === 'settings') ? 'auto' : '50%',
-        left: (currentScreen === 'main' || currentScreen === 'settings') ? 'auto' : '50%',
-        transform: (currentScreen === 'main' || currentScreen === 'settings') ? 'none' : 'translate(-50%, -50%)',
-        width: '100%',
-        maxWidth: (currentScreen === 'main' || currentScreen === 'settings') ? '100%' : '400px',
-        paddingLeft: (currentScreen === 'main' || currentScreen === 'settings') ? 0 : theme.spacing.xl,
-        paddingRight: (currentScreen === 'main' || currentScreen === 'settings') ? 0 : theme.spacing.xl,
-        height: (currentScreen === 'main' || currentScreen === 'settings') ? '100vh' : 'auto',
-      }}>
-        {/* Screen routing */}
-        <AnimatePresence mode="wait">
-          {currentScreen === 'email' && (
-            <EmailScreen
-              email={email}
-              setEmail={setEmail}
-              showEmailError={showEmailError}
-              setShowEmailError={setShowEmailError}
-              isLoading={isLoading}
-              onSubmit={handleEmailSubmit}
-            />
-          )}
+      {/* Main screen layout: sidebar + content */}
+      {currentScreen === 'main' ? (
+        <div style={{
+          display: 'flex',
+          height: '100vh',
+          width: '100%',
+        }}>
+          <Sidebar
+            currentScreen={currentScreen}
+            selectedTeamId={selectedTeamId || ''}
+            setSelectedTeamId={setSelectedTeamId}
+            currentView={currentView}
+            setCurrentView={setCurrentView}
+            onLogout={handleLogout}
+            onTeamsLoad={handleTeamsLoad}
+          />
 
-          {currentScreen === 'otp' && (
-            <OTPScreen
-              email={email}
-              otpError={otpError}
-              otpScreenFading={otpScreenFading}
-              onComplete={handleOTPComplete}
-              onSubmit={handleOTPSubmit}
-              onBack={() => {
-                setCurrentScreen('email');
-                setOtpError('');
-              }}
-            />
-          )}
-
-          {currentScreen === 'main' && (
-            <motion.div
-              key="main-content"
-              variants={mainVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              style={{
-                marginLeft: sidebarExpanded ? '25%' : '60px',
-                width: sidebarExpanded ? '75%' : 'calc(100% - 60px)',
-                height: '100vh',
-                backgroundColor: theme.colors.background.primary,
-                display: 'flex',
-                flexDirection: 'column',
-                transition: theme.transitions.normal,
-              }}
-            >
-              {/* Header with Logo */}
-              <div
-                style={{
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.primary,
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  borderRadius: '0 0 16px 16px',
-                }}
-              >
-                <Image
-                  src="/logo.png"
-                  alt="Via Logo"
-                  width={40}
-                  height={40}
-                  priority
-                />
-              </div>
-
-              <MainScreen
-                sessionId={currentSessionId}
-                coachId={coach?.id || null}
-                teamId={selectedTeamId}
-                teams={teamsData}
-              />
-            </motion.div>
-          )}
-
-          {currentScreen === 'settings' && (
-            <motion.div
-              key="settings-content"
-              variants={settingsVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              style={{
-                marginLeft: sidebarExpanded ? '25%' : '60px',
-                width: sidebarExpanded ? '75%' : 'calc(100% - 60px)',
-                height: '100vh',
-                backgroundColor: theme.colors.background.primary,
-                display: 'flex',
-                flexDirection: 'column',
-                transition: theme.transitions.normal,
-              }}
-            >
-              {/* Header with Logo */}
-              <div
-                style={{
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.primary,
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  borderRadius: '0 0 16px 16px',
-                }}
-              >
-                <Image
-                  src="/logo.png"
-                  alt="Via Logo"
-                  width={40}
-                  height={40}
-                  priority
-                />
-              </div>
-
-              <SettingsPanel>
-                <TeamList
+          {/* Content area */}
+          <div style={{
+            flex: 1,
+            height: '100vh',
+            overflow: 'auto',
+            backgroundColor: theme.colors.background.primary,
+          }}>
+            <AnimatePresence mode="wait">
+              {currentView === 'sessions' && (
+                <MainScreen
+                  sessionId={currentSessionId}
+                  sessionMode={sessionMode}
                   coachId={coach?.id || null}
-                  selectedTeamId={selectedSettingsTeamId}
-                  onTeamSelect={setSelectedSettingsTeamId}
-                  triggerNewTeam={triggerNewTeam}
-                  deletedTeamId={deletedTeamId}
-                  onTeamCreated={() => {
-                    // Team was created - TeamList already updated its own state
-                    // We could do additional logic here if needed
-                  }}
+                  teamId={selectedTeamId}
+                  teams={teamsData}
+                  onClearSession={handleClearSession}
                 />
+              )}
 
-                {/* Right Panel - Team Details or Global Settings */}
+              {currentView === 'dashboard' && selectedTeamId && coach?.id && (
+                <DashboardView
+                  coachId={coach.id}
+                  teamId={selectedTeamId}
+                  onNavigateToSession={handleNavigateToSession}
+                />
+              )}
+
+              {currentView === 'settings' && coach?.id && (
+                <SettingsView
+                  coachId={coach.id}
+                  coach={coach}
+                  refreshAuth={refreshAuth}
+                />
+              )}
+
+              {currentView === 'players' && selectedTeamId && coach?.id && (
+                <PlayersView
+                  coachId={coach.id}
+                  teamId={selectedTeamId}
+                />
+              )}
+
+              {currentView === 'methodology' && selectedTeamId && coach?.id && (
+                <MethodologyView
+                  coachId={coach.id}
+                  teamId={selectedTeamId}
+                />
+              )}
+
+              {!['sessions', 'dashboard', 'settings', 'players', 'methodology'].includes(currentView) && (
                 <div
                   style={{
-                    width: '60%',
-                    height: '100%',
                     display: 'flex',
-                    flexDirection: 'column',
-                    backgroundColor: theme.colors.background.secondary,
-                    borderRadius: theme.borderRadius.lg,
-                    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
-                    overflow: 'hidden',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100vh',
+                    color: theme.colors.text.primary,
+                    fontSize: theme.typography.fontSize['2xl'],
+                    fontWeight: theme.typography.fontWeight.semibold,
                   }}
                 >
-                  {selectedSettingsTeamId === 'global' ? (
-                    <GlobalRules
-                      coachId={coach?.id || null}
-                    />
-                  ) : selectedSettingsTeamId ? (
-                    <TeamDetails
-                      teamId={selectedSettingsTeamId}
-                      coachId={coach?.id || null}
-                      onTeamDeleted={() => {
-                        // Trigger TeamList to remove team immediately
-                        setDeletedTeamId(selectedSettingsTeamId);
-                        // Clear selection
-                        setSelectedSettingsTeamId(null);
-                        // Reset deleted team id after a brief delay
-                        setTimeout(() => setDeletedTeamId(null), 100);
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '100%',
-                        color: theme.colors.text.muted,
-                        fontSize: theme.typography.fontSize.lg,
-                        padding: theme.spacing.xl,
-                      }}
-                    >
-                      Select a team or coaching methodology to manage
-                    </div>
-                  )}
+                  {currentView.charAt(0).toUpperCase() + currentView.slice(1).replace('-', ' ')} - Coming Soon
                 </div>
-              </SettingsPanel>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      ) : (
+        /* Auth screens - centered layout */
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '100%',
+          maxWidth: '400px',
+          paddingLeft: theme.spacing.xl,
+          paddingRight: theme.spacing.xl,
+        }}>
+          <AnimatePresence mode="wait">
+            {currentScreen === 'email' && (
+              <EmailScreen
+                email={email}
+                setEmail={setEmail}
+                showEmailError={showEmailError}
+                setShowEmailError={setShowEmailError}
+                isLoading={isLoading}
+                onSubmit={handleEmailSubmit}
+              />
+            )}
+
+            {currentScreen === 'otp' && (
+              <OTPScreen
+                email={email}
+                otpError={otpError}
+                otpScreenFading={otpScreenFading}
+                onComplete={handleOTPComplete}
+                onSubmit={handleOTPSubmit}
+                onBack={() => {
+                  setCurrentScreen('email');
+                  setOtpError('');
+                }}
+              />
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

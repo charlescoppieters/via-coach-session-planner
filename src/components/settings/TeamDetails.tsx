@@ -1,43 +1,80 @@
 'use client'
 
-import React, { useRef, useState, useEffect } from 'react';
-import { FaEdit, FaSave } from "react-icons/fa";
-import { MdDelete } from "react-icons/md";
-import { CgSpinnerAlt } from "react-icons/cg";
-import { theme } from "@/styles/theme";
+import React, { useState, useEffect } from 'react';
+import { theme } from '@/styles/theme';
 import { supabase } from '@/lib/supabase';
-import { getTeam, updateTeam, deleteTeam } from '@/lib/teams';
-import { TeamForm } from '@/components/teams/TeamForm';
-import { TeamRules } from '@/components/rules/TeamRules';
+import { getTeam } from '@/lib/teams';
 import type { Team } from '@/types/database';
 
 interface TeamDetailsProps {
-  teamId: string;
+  teamId: string | null;
   coachId: string | null;
   onTeamDeleted?: () => void;
+  onTeamUpdated?: () => void;
+  onTeamCreated?: (teamData: {
+    name: string;
+    age_group: string;
+    skill_level: string;
+    player_count: number;
+    sessions_per_week: number;
+    session_duration: number;
+    gender: string | null;
+  }) => Promise<void>;
+  onTeamCancelled?: () => void;
 }
 
 export const TeamDetails: React.FC<TeamDetailsProps> = ({
   teamId,
   coachId,
   onTeamDeleted,
+  onTeamUpdated,
+  onTeamCreated,
+  onTeamCancelled,
 }) => {
-  const teamNameInputRef = useRef<HTMLInputElement>(null);
-
-  // Local state
+  const isNewTeam = teamId === null;
   const [team, setTeam] = useState<Team | null>(null);
-  const [formData, setFormData] = useState<Team | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [editedTeam, setEditedTeam] = useState<{
+    name: string;
+    age_group: string;
+    skill_level: string;
+    player_count: number;
+    sessions_per_week: number;
+    session_duration: number;
+    gender: string;
+  }>({
+    name: '',
+    age_group: '',
+    skill_level: '',
+    player_count: 0,
+    sessions_per_week: 0,
+    session_duration: 0,
+    gender: '',
+  });
 
   // Fetch team data when teamId changes
   useEffect(() => {
     const fetchTeam = async () => {
+      // Handle new team creation
+      if (isNewTeam) {
+        setTeam(null);
+        setEditedTeam({
+          name: '',
+          age_group: '',
+          skill_level: '',
+          player_count: 0,
+          sessions_per_week: 0,
+          session_duration: 0,
+          gender: '',
+        });
+        setIsEditing(true);
+        setIsLoading(false);
+        return;
+      }
+
       if (!teamId || !coachId) {
         setTeam(null);
-        setFormData(null);
         return;
       }
 
@@ -46,16 +83,17 @@ export const TeamDetails: React.FC<TeamDetailsProps> = ({
 
       if (data) {
         setTeam(data);
-        setFormData({ ...data });
-        // If this team was created very recently (within last 5 seconds), start in edit mode
-        const teamCreatedAt = new Date(data.created_at);
-        const now = new Date();
-        const timeDifference = now.getTime() - teamCreatedAt.getTime();
-        const fiveSecondsInMs = 5 * 1000;
+        setEditedTeam({
+          name: data.name || '',
+          age_group: data.age_group || '',
+          skill_level: data.skill_level || '',
+          player_count: data.player_count || 0,
+          sessions_per_week: data.sessions_per_week || 0,
+          session_duration: data.session_duration || 0,
+          gender: data.gender || '',
+        });
 
-        if (timeDifference < fiveSecondsInMs) {
-          setIsEditing(true);
-        }
+        // Don't auto-edit - let user click Edit button when they want to make changes
       }
       if (error) {
         console.error('Error fetching team:', error);
@@ -64,426 +102,642 @@ export const TeamDetails: React.FC<TeamDetailsProps> = ({
     };
 
     fetchTeam();
-    setIsEditing(false); // Reset edit state when team changes
-  }, [teamId, coachId]);
+    if (!isNewTeam) {
+      setIsEditing(false);
+    }
+  }, [teamId, coachId, isNewTeam]);
 
-  // Subscribe to team changes with tab-switch fix
+  // Real-time subscription
   useEffect(() => {
     if (!teamId) return;
 
-    let retryCount = 0;
-    const maxRetries = 3;
-    const baseDelay = 1000;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    let isSubscribed = false;
-
-    const handleTeamChange = (payload: { new?: Team; old?: Team; eventType: string }) => {
-      try {
-        if (payload.new && !isEditing) {
-          setTeam(payload.new as Team);
-          setFormData(payload.new as Team);
+    const channel = supabase
+      .channel(`team-details-${teamId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'teams',
+          filter: `id=eq.${teamId}`,
+        },
+        (payload) => {
+          if (!isEditing && payload.new) {
+            setTeam(payload.new as Team);
+            setEditedTeam({
+              name: (payload.new as Team).name || '',
+              age_group: (payload.new as Team).age_group || '',
+              skill_level: (payload.new as Team).skill_level || '',
+              player_count: (payload.new as Team).player_count || 0,
+              sessions_per_week: (payload.new as Team).sessions_per_week || 0,
+              session_duration: (payload.new as Team).session_duration || 0,
+              gender: (payload.new as Team).gender || '',
+            });
+          }
         }
-      } catch (error) {
-        console.error('Team details subscription handler failed:', error);
-      }
-    };
-
-    const createSubscription = () => {
-      try {
-        channel = supabase
-          .channel(`team-details-${teamId}-${Date.now()}`)
-          .on<Team>(
-            'postgres_changes' as never,
-            {
-              event: 'UPDATE',
-              schema: 'public',
-              table: 'teams',
-              filter: `id=eq.${teamId}`,
-            },
-            handleTeamChange
-          )
-          .subscribe((status: string) => {
-            if (status === 'SUBSCRIBED') {
-              isSubscribed = true;
-              retryCount = 0;
-            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-              console.warn('Team details subscription failed, retrying...');
-              isSubscribed = false;
-              if (retryCount < maxRetries) {
-                retryCount++;
-                setTimeout(createSubscription, baseDelay * retryCount);
-              }
-            }
-          });
-      } catch (error) {
-        console.error('Failed to create team details subscription:', error);
-        if (retryCount < maxRetries) {
-          retryCount++;
-          setTimeout(createSubscription, baseDelay * retryCount);
-        }
-      }
-    };
-
-    createSubscription();
+      )
+      .subscribe();
 
     return () => {
-      isSubscribed = false;
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      supabase.removeChannel(channel);
     };
   }, [teamId, isEditing]);
 
-  React.useEffect(() => {
-    if (isEditing && teamNameInputRef.current) {
-      teamNameInputRef.current.focus();
-    }
-  }, [isEditing]);
-
-  // Reset form data when exiting edit mode
-  React.useEffect(() => {
-    if (!isEditing && team) {
-      setFormData({ ...team });
-    }
-  }, [isEditing, team]);
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          color: theme.colors.text.muted,
-        }}
-      >
-        <CgSpinnerAlt
-          style={{
-            animation: 'spin 1s linear infinite',
-            fontSize: '24px',
-          }}
-        />
-      </div>
-    );
-  }
-
-  // Don't render if no data
-  if (!team || !formData) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          color: theme.colors.text.muted,
-          fontSize: theme.typography.fontSize.lg,
-        }}
-      >
-        Team not found
-      </div>
-    );
-  }
-
-  const handleFieldChange = (field: keyof Team, value: string | number) => {
-    setFormData(prev => prev ? { ...prev, [field]: value } : null);
-  };
-
-  const handleNameChange = (name: string) => {
-    setFormData(prev => prev ? { ...prev, name } : null);
-  };
-
   const handleSave = async () => {
-    if (!formData) return;
-
-    setIsSaving(true);
-    const { data: updatedTeam, error } = await updateTeam(formData.id, formData);
-
-    if (updatedTeam) {
-      setTeam(updatedTeam);
-      setFormData({ ...updatedTeam });
-      setIsEditing(false);
-
-      // Force trigger parent components to refresh since real-time might not be working
-      // This is a fallback to ensure UI consistency
-      setTimeout(() => {
-        // The parent components should pick this up via their subscriptions
-        // But if real-time isn't working, this gives us a backup
-        window.dispatchEvent(new CustomEvent('teamUpdated', {
-          detail: { team: updatedTeam, action: 'update' }
-        }));
-      }, 100);
+    // Handle creating new team
+    if (isNewTeam && onTeamCreated) {
+      await onTeamCreated({
+        name: editedTeam.name,
+        age_group: editedTeam.age_group,
+        skill_level: editedTeam.skill_level,
+        player_count: editedTeam.player_count,
+        sessions_per_week: editedTeam.sessions_per_week,
+        session_duration: editedTeam.session_duration,
+        gender: editedTeam.gender || null,
+      });
+      return;
     }
+
+    // Handle updating existing team
+    if (!team) return;
+
+    const { error } = await supabase
+      .from('teams')
+      .update({
+        name: editedTeam.name,
+        age_group: editedTeam.age_group,
+        skill_level: editedTeam.skill_level,
+        player_count: editedTeam.player_count,
+        sessions_per_week: editedTeam.sessions_per_week,
+        session_duration: editedTeam.session_duration,
+        gender: editedTeam.gender || null,
+      })
+      .eq('id', team.id);
+
     if (error) {
-      console.error('Error saving team:', error);
+      console.error('Error updating team:', error);
+      return;
     }
-    setIsSaving(false);
+
+    // Update local state immediately with new values
+    setTeam({
+      ...team,
+      name: editedTeam.name,
+      age_group: editedTeam.age_group,
+      skill_level: editedTeam.skill_level,
+      player_count: editedTeam.player_count,
+      sessions_per_week: editedTeam.sessions_per_week,
+      session_duration: editedTeam.session_duration,
+      gender: editedTeam.gender || null,
+    });
+
+    setIsEditing(false);
+
+    // Refetch teams list to ensure sidebar is updated
+    if (onTeamUpdated) {
+      await onTeamUpdated();
+    }
   };
 
   const handleDelete = async () => {
-    if (!teamId || !confirm('Are you sure you want to delete this team?')) return;
+    if (!team || !confirm(`Are you sure you want to delete ${team.name}?`)) return;
 
-    setIsDeleting(true);
-    const { error } = await deleteTeam(teamId);
+    const { error } = await supabase
+      .from('teams')
+      .delete()
+      .eq('id', team.id);
 
-    if (!error) {
-      // Team deleted successfully - notify parent to clear selection
-      onTeamDeleted?.();
-      // Also manually trigger team update event for Sidebar
-      window.dispatchEvent(new CustomEvent('teamUpdated', { detail: { action: 'delete', teamId } }));
-    } else {
+    if (error) {
       console.error('Error deleting team:', error);
+      return;
     }
-    setIsDeleting(false);
+
+    // Refetch teams list to ensure sidebar is updated
+    if (onTeamUpdated) {
+      await onTeamUpdated();
+    }
+
+    if (onTeamDeleted) {
+      onTeamDeleted();
+    }
   };
 
-  // Simple validation - check if required fields are filled
-  const canSave = formData.name.trim() !== '';
+  if (isLoading) {
+    return (
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: theme.spacing.xl,
+      }}>
+        <div style={{
+          textAlign: 'center',
+          color: theme.colors.text.secondary,
+          fontSize: theme.typography.fontSize.lg,
+        }}>
+          Loading team details...
+        </div>
+      </div>
+    );
+  }
+
+  if (!team && !isNewTeam) {
+    return (
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: theme.spacing.xl,
+      }}>
+        <div style={{
+          textAlign: 'center',
+          color: theme.colors.text.secondary,
+          fontSize: theme.typography.fontSize.lg,
+        }}>
+          Select a team to view details
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <div
-        style={{
-          padding: theme.spacing.lg,
-          background: theme.colors.gold.main,
-          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-          position: 'relative',
-        }}
-      >
-        <div style={{ paddingRight: '200px' }}>
+    <div style={{
+      flex: 1,
+      overflowY: 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      padding: theme.spacing.xl,
+    }}>
+      <div style={{
+        backgroundColor: theme.colors.background.secondary,
+        borderRadius: theme.borderRadius.lg,
+        padding: theme.spacing.xl,
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+      }}>
+        {/* Header: Team Name and Edit/Save/Delete Buttons */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: theme.spacing.xl,
+          paddingBottom: theme.spacing.lg,
+          borderBottom: `1px solid ${theme.colors.border.primary}`,
+        }}>
+          {/* Team Name */}
           {isEditing ? (
             <input
-              ref={teamNameInputRef}
               type="text"
-              value={formData.name}
-              onChange={(e) => handleNameChange(e.target.value)}
+              value={editedTeam.name}
+              onChange={(e) => setEditedTeam({ ...editedTeam, name: e.target.value })}
+              placeholder="Enter team name"
               style={{
-                backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                border: `1px solid rgba(255, 255, 255, 0.3)`,
-                borderRadius: theme.borderRadius.sm,
+                flex: 1,
+                fontSize: theme.typography.fontSize['3xl'],
+                fontWeight: theme.typography.fontWeight.bold,
                 color: theme.colors.text.primary,
-                fontSize: theme.typography.fontSize.lg,
-                fontWeight: theme.typography.fontWeight.semibold,
-                fontFamily: theme.typography.fontFamily.primary,
+                padding: theme.spacing.sm,
+                border: `2px solid ${theme.colors.border.primary}`,
+                borderRadius: theme.borderRadius.md,
                 outline: 'none',
-                padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
-                letterSpacing: '-0.025em',
-                boxSizing: 'border-box',
-                width: '300px',
-                maxWidth: '60%',
+                backgroundColor: theme.colors.background.primary,
+                marginRight: theme.spacing.lg,
               }}
               onFocus={(e) => {
-                e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.25)';
-                e.target.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+                e.target.style.borderColor = theme.colors.gold.main;
               }}
               onBlur={(e) => {
-                e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
-                e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                e.target.style.borderColor = theme.colors.border.primary;
               }}
             />
           ) : (
-            <h3
-              style={{
-                color: theme.colors.text.primary,
-                fontSize: theme.typography.fontSize.lg,
-                fontWeight: theme.typography.fontWeight.semibold,
-                margin: 0,
-                letterSpacing: '-0.025em',
-              }}
-            >
-              {formData.name}
-            </h3>
+            <h1 style={{
+              flex: 1,
+              fontSize: theme.typography.fontSize['3xl'],
+              fontWeight: theme.typography.fontWeight.bold,
+              color: theme.colors.text.primary,
+              margin: 0,
+            }}>
+              {team?.name || editedTeam.name}
+            </h1>
           )}
-        </div>
-        <p
-          style={{
-            color: theme.colors.text.primary,
-            fontSize: theme.typography.fontSize.sm,
-            margin: `${theme.spacing.xs} 0 0 0`,
-            opacity: 0.8,
-          }}
-        >
-          Edit team details and manage team-specific rules
-        </p>
 
-        {/* Action Buttons */}
-        <div
-          style={{
-            position: 'absolute',
-            right: theme.spacing.lg,
-            top: '50%',
-            transform: 'translateY(-50%)',
-          }}
-        >
-          {!isEditing ? (
-            <button
-              onClick={() => setIsEditing(true)}
-              style={{
-                padding: `0 ${theme.spacing.md}`,
-                height: '36px',
-                backgroundColor: theme.colors.gold.light,
+          {/* Buttons */}
+          <div style={{
+            display: 'flex',
+            gap: theme.spacing.sm,
+            flexShrink: 0,
+          }}>
+            {/* Save Button (or Edit for existing teams when not editing) */}
+            {(!isNewTeam || isEditing) && (
+              <button
+                onClick={() => isEditing ? handleSave() : setIsEditing(true)}
+                style={{
+                  padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+                  backgroundColor: isEditing ? theme.colors.gold.main : theme.colors.background.primary,
+                  color: isEditing ? theme.colors.background.primary : theme.colors.text.primary,
+                  border: 'none',
+                  borderRadius: theme.borderRadius.md,
+                  fontSize: theme.typography.fontSize.base,
+                  fontWeight: theme.typography.fontWeight.semibold,
+                  cursor: 'pointer',
+                  transition: theme.transitions.fast,
+                }}
+                onMouseEnter={(e) => {
+                  if (isEditing) {
+                    e.currentTarget.style.backgroundColor = theme.colors.gold.light;
+                  } else {
+                    e.currentTarget.style.backgroundColor = theme.colors.background.tertiary;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (isEditing) {
+                    e.currentTarget.style.backgroundColor = theme.colors.gold.main;
+                  } else {
+                    e.currentTarget.style.backgroundColor = theme.colors.background.primary;
+                  }
+                }}
+              >
+                {isEditing ? 'Save' : 'Edit'}
+              </button>
+            )}
+
+            {/* Cancel Button (only for new teams) */}
+            {isNewTeam && onTeamCancelled && (
+              <button
+                onClick={onTeamCancelled}
+                style={{
+                  padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+                  backgroundColor: theme.colors.background.primary,
+                  color: theme.colors.text.primary,
+                  border: 'none',
+                  borderRadius: theme.borderRadius.md,
+                  fontSize: theme.typography.fontSize.base,
+                  fontWeight: theme.typography.fontWeight.semibold,
+                  cursor: 'pointer',
+                  transition: theme.transitions.fast,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.colors.background.tertiary;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.colors.background.primary;
+                }}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Team Details Fields */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: theme.spacing.lg,
+        }}>
+          {/* Age Group */}
+          <div>
+            <label style={{
+              display: 'block',
+              fontSize: theme.typography.fontSize.sm,
+              fontWeight: theme.typography.fontWeight.semibold,
+              color: theme.colors.text.secondary,
+              marginBottom: theme.spacing.xs,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}>
+              Age Group
+            </label>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editedTeam.age_group}
+                onChange={(e) => setEditedTeam({ ...editedTeam, age_group: e.target.value })}
+                placeholder="e.g. U12, U15"
+                style={{
+                  width: '100%',
+                  padding: theme.spacing.md,
+                  fontSize: theme.typography.fontSize.base,
+                  color: theme.colors.text.primary,
+                  backgroundColor: theme.colors.background.primary,
+                  border: `2px solid ${theme.colors.border.primary}`,
+                  borderRadius: theme.borderRadius.md,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = theme.colors.gold.main;
+                  e.target.style.boxShadow = theme.shadows.gold;
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = theme.colors.border.primary;
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+            ) : (
+              <div style={{
+                fontSize: theme.typography.fontSize.base,
                 color: theme.colors.text.primary,
+              }}>
+                {team?.age_group || editedTeam.age_group}
+              </div>
+            )}
+          </div>
+
+          {/* Skill Level */}
+          <div>
+            <label style={{
+              display: 'block',
+              fontSize: theme.typography.fontSize.sm,
+              fontWeight: theme.typography.fontWeight.semibold,
+              color: theme.colors.text.secondary,
+              marginBottom: theme.spacing.xs,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}>
+              Skill Level
+            </label>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editedTeam.skill_level}
+                onChange={(e) => setEditedTeam({ ...editedTeam, skill_level: e.target.value })}
+                placeholder="e.g. Beginner, Intermediate"
+                style={{
+                  width: '100%',
+                  padding: theme.spacing.md,
+                  fontSize: theme.typography.fontSize.base,
+                  color: theme.colors.text.primary,
+                  backgroundColor: theme.colors.background.primary,
+                  border: `2px solid ${theme.colors.border.primary}`,
+                  borderRadius: theme.borderRadius.md,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = theme.colors.gold.main;
+                  e.target.style.boxShadow = theme.shadows.gold;
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = theme.colors.border.primary;
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+            ) : (
+              <div style={{
+                fontSize: theme.typography.fontSize.base,
+                color: theme.colors.text.primary,
+              }}>
+                {team?.skill_level || editedTeam.skill_level}
+              </div>
+            )}
+          </div>
+
+          {/* Player Count */}
+          <div>
+            <label style={{
+              display: 'block',
+              fontSize: theme.typography.fontSize.sm,
+              fontWeight: theme.typography.fontWeight.semibold,
+              color: theme.colors.text.secondary,
+              marginBottom: theme.spacing.xs,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}>
+              Player Count
+            </label>
+            {isEditing ? (
+              <input
+                type="number"
+                value={editedTeam.player_count || ''}
+                onChange={(e) => setEditedTeam({ ...editedTeam, player_count: parseInt(e.target.value) || 0 })}
+                placeholder="e.g. 12"
+                style={{
+                  width: '100%',
+                  padding: theme.spacing.md,
+                  fontSize: theme.typography.fontSize.base,
+                  color: theme.colors.text.primary,
+                  backgroundColor: theme.colors.background.primary,
+                  border: `2px solid ${theme.colors.border.primary}`,
+                  borderRadius: theme.borderRadius.md,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = theme.colors.gold.main;
+                  e.target.style.boxShadow = theme.shadows.gold;
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = theme.colors.border.primary;
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+            ) : (
+              <div style={{
+                fontSize: theme.typography.fontSize.base,
+                color: theme.colors.text.primary,
+              }}>
+                {team?.player_count || editedTeam.player_count}
+              </div>
+            )}
+          </div>
+
+          {/* Sessions Per Week */}
+          <div>
+            <label style={{
+              display: 'block',
+              fontSize: theme.typography.fontSize.sm,
+              fontWeight: theme.typography.fontWeight.semibold,
+              color: theme.colors.text.secondary,
+              marginBottom: theme.spacing.xs,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}>
+              Sessions Per Week
+            </label>
+            {isEditing ? (
+              <input
+                type="number"
+                value={editedTeam.sessions_per_week || ''}
+                onChange={(e) => setEditedTeam({ ...editedTeam, sessions_per_week: parseInt(e.target.value) || 0 })}
+                placeholder="e.g. 2"
+                style={{
+                  width: '100%',
+                  padding: theme.spacing.md,
+                  fontSize: theme.typography.fontSize.base,
+                  color: theme.colors.text.primary,
+                  backgroundColor: theme.colors.background.primary,
+                  border: `2px solid ${theme.colors.border.primary}`,
+                  borderRadius: theme.borderRadius.md,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = theme.colors.gold.main;
+                  e.target.style.boxShadow = theme.shadows.gold;
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = theme.colors.border.primary;
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+            ) : (
+              <div style={{
+                fontSize: theme.typography.fontSize.base,
+                color: theme.colors.text.primary,
+              }}>
+                {team?.sessions_per_week || editedTeam.sessions_per_week}
+              </div>
+            )}
+          </div>
+
+          {/* Session Duration */}
+          <div>
+            <label style={{
+              display: 'block',
+              fontSize: theme.typography.fontSize.sm,
+              fontWeight: theme.typography.fontWeight.semibold,
+              color: theme.colors.text.secondary,
+              marginBottom: theme.spacing.xs,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}>
+              Session Duration (min)
+            </label>
+            {isEditing ? (
+              <input
+                type="number"
+                value={editedTeam.session_duration || ''}
+                onChange={(e) => setEditedTeam({ ...editedTeam, session_duration: parseInt(e.target.value) || 0 })}
+                placeholder="e.g. 60"
+                style={{
+                  width: '100%',
+                  padding: theme.spacing.md,
+                  fontSize: theme.typography.fontSize.base,
+                  color: theme.colors.text.primary,
+                  backgroundColor: theme.colors.background.primary,
+                  border: `2px solid ${theme.colors.border.primary}`,
+                  borderRadius: theme.borderRadius.md,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = theme.colors.gold.main;
+                  e.target.style.boxShadow = theme.shadows.gold;
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = theme.colors.border.primary;
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+            ) : (
+              <div style={{
+                fontSize: theme.typography.fontSize.base,
+                color: theme.colors.text.primary,
+              }}>
+                {team?.session_duration || editedTeam.session_duration}
+              </div>
+            )}
+          </div>
+
+          {/* Gender */}
+          <div>
+            <label style={{
+              display: 'block',
+              fontSize: theme.typography.fontSize.sm,
+              fontWeight: theme.typography.fontWeight.semibold,
+              color: theme.colors.text.secondary,
+              marginBottom: theme.spacing.xs,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}>
+              Gender
+            </label>
+            {isEditing ? (
+              <select
+                value={editedTeam.gender}
+                onChange={(e) => setEditedTeam({ ...editedTeam, gender: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: theme.spacing.md,
+                  fontSize: theme.typography.fontSize.base,
+                  color: editedTeam.gender ? theme.colors.text.primary : theme.colors.text.secondary,
+                  backgroundColor: theme.colors.background.primary,
+                  border: `2px solid ${theme.colors.border.primary}`,
+                  borderRadius: theme.borderRadius.md,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  appearance: 'none',
+                  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 0.7rem center',
+                  backgroundSize: '1.2em',
+                  paddingRight: '2.5rem',
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = theme.colors.gold.main;
+                  e.target.style.boxShadow = theme.shadows.gold;
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = theme.colors.border.primary;
+                  e.target.style.boxShadow = 'none';
+                }}
+              >
+                <option value="" style={{ color: theme.colors.text.secondary }}>Select...</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Co-Ed">Co-Ed</option>
+              </select>
+            ) : (
+              <div style={{
+                fontSize: theme.typography.fontSize.base,
+                color: theme.colors.text.primary,
+              }}>
+                {team?.gender || editedTeam.gender || 'Not specified'}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Delete Button - Only visible when editing existing teams */}
+        {isEditing && !isNewTeam && (
+          <div style={{
+            marginTop: theme.spacing.xl,
+            paddingTop: theme.spacing.xl,
+            borderTop: `1px solid ${theme.colors.border.primary}`,
+            display: 'flex',
+            justifyContent: 'center',
+          }}>
+            <button
+              onClick={handleDelete}
+              style={{
+                padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+                backgroundColor: theme.colors.background.primary,
+                color: theme.colors.status.error,
                 border: 'none',
                 borderRadius: theme.borderRadius.md,
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.medium,
+                fontSize: theme.typography.fontSize.base,
+                fontWeight: theme.typography.fontWeight.semibold,
                 cursor: 'pointer',
-                transition: theme.transitions.normal,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-start',
-                gap: theme.spacing.sm,
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-                whiteSpace: 'nowrap',
+                transition: theme.transitions.fast,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = theme.colors.gold.main;
+                e.currentTarget.style.backgroundColor = theme.colors.background.tertiary;
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = theme.colors.gold.light;
+                e.currentTarget.style.backgroundColor = theme.colors.background.primary;
               }}
             >
-              <FaEdit size={16} />
-              <span style={{ fontWeight: theme.typography.fontWeight.bold }}>Edit Team</span>
+              Delete Team
             </button>
-          ) : (
-            <div style={{ display: 'flex', gap: theme.spacing.sm }}>
-              <button
-                onClick={handleDelete}
-                disabled={isDeleting}
-                style={{
-                  padding: `0 ${theme.spacing.md}`,
-                  height: '36px',
-                  backgroundColor: '#dc3545',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: theme.borderRadius.md,
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  cursor: isDeleting ? 'not-allowed' : 'pointer',
-                  opacity: isDeleting ? 0.6 : 1,
-                  transition: theme.transitions.normal,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-start',
-                  gap: theme.spacing.xs,
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#c82333';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#dc3545';
-                }}
-              >
-                {isDeleting ? (
-                  <>
-                    <CgSpinnerAlt
-                      style={{
-                        animation: 'spin 1s linear infinite',
-                        fontSize: '16px',
-                      }}
-                    />
-                    <span style={{ fontWeight: theme.typography.fontWeight.bold }}>Deleting...</span>
-                  </>
-                ) : (
-                  <>
-                    <MdDelete size={16} />
-                    <span style={{ fontWeight: theme.typography.fontWeight.bold }}>Delete Team</span>
-                  </>
-                )}
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={!canSave || isSaving}
-                style={{
-                  padding: `0 ${theme.spacing.md}`,
-                  height: '36px',
-                  backgroundColor: (canSave && !isSaving) ? theme.colors.gold.light : theme.colors.text.muted,
-                  color: (canSave && !isSaving) ? theme.colors.text.primary : theme.colors.text.secondary,
-                  border: 'none',
-                  borderRadius: theme.borderRadius.md,
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  cursor: (canSave && !isSaving) ? 'pointer' : 'not-allowed',
-                  transition: theme.transitions.normal,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-start',
-                  gap: theme.spacing.sm,
-                  boxShadow: (canSave && !isSaving) ? '0 2px 8px rgba(0, 0, 0, 0.15)' : 'none',
-                  whiteSpace: 'nowrap',
-                  opacity: (canSave && !isSaving) ? 1 : 0.6,
-                }}
-                onMouseEnter={(e) => {
-                  if (canSave && !isSaving) {
-                    e.currentTarget.style.backgroundColor = theme.colors.gold.main;
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (canSave && !isSaving) {
-                    e.currentTarget.style.backgroundColor = theme.colors.gold.light;
-                  }
-                }}
-              >
-                {isSaving ? (
-                  <>
-                    <CgSpinnerAlt
-                      style={{
-                        animation: 'spin 1s linear infinite',
-                        fontSize: '16px',
-                      }}
-                    />
-                    <span style={{ fontWeight: theme.typography.fontWeight.bold }}>Saving...</span>
-                  </>
-                ) : (
-                  <>
-                    <FaSave size={16} />
-                    <span style={{ fontWeight: theme.typography.fontWeight.bold }}>Save Team</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
-
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          maxHeight: '100%',
-        }}
-      >
-        {/* Team Properties Form */}
-        <div
-          style={{
-            padding: theme.spacing.lg,
-            paddingBottom: theme.spacing.md,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: theme.spacing.md,
-            flexShrink: 0,
-          }}
-        >
-          <TeamForm
-            team={formData}
-            isEditing={isEditing}
-            onChange={handleFieldChange}
-          />
-        </div>
-
-        {/* Team Rules Section */}
-        <TeamRules
-          teamId={formData.id}
-          teamName={formData.name}
-        />
-      </div>
-    </>
+    </div>
   );
 };

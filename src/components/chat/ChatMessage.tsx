@@ -28,11 +28,9 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
         padding: theme.spacing.lg,
         borderRadius: theme.borderRadius.xl,
         background: message.type === 'user'
-          ? theme.colors.gold.main
-          : theme.colors.background.tertiary,
-        color: message.type === 'user'
-          ? theme.colors.text.secondary
-          : theme.colors.text.primary,
+          ? theme.colors.background.tertiary
+          : theme.colors.background.secondary,
+        color: theme.colors.text.primary,
         alignSelf: message.type === 'user' ? 'flex-end' : 'flex-start',
         maxWidth: '75%',
         boxShadow: 'none',

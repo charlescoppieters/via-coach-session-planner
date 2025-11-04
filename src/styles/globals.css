@@ -13,30 +13,30 @@ html {
 
 /* Input placeholder styling */
 .input::placeholder {
-  color: #a0a0a0;
+  color: #FFFFFF;
   opacity: 1;
 }
 
 .input::-webkit-input-placeholder {
-  color: #a0a0a0;
+  color: #FFFFFF;
 }
 
 .input::-moz-placeholder {
-  color: #a0a0a0;
+  color: #FFFFFF;
   opacity: 1;
 }
 
 .input:-ms-input-placeholder {
-  color: #a0a0a0;
+  color: #FFFFFF;
 }
 
 .input::-ms-input-placeholder {
-  color: #a0a0a0;
+  color: #FFFFFF;
 }
 
 /* Button hover and focus states */
 .button:focus-visible {
-  outline: 2px solid #d4af37;
+  outline: 2px solid #EFBF04;
   outline-offset: 2px;
 }
 

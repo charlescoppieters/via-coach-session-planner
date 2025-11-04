@@ -12,6 +12,8 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className = '', onSubmit, ...props }, ref) => {
+    const inputId = React.useId();
+
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -19,7 +21,16 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         transition={{ duration: 0.4, delay: 0.1 }}
         style={{ position: 'relative', width: '100%' }}
       >
+        <style>
+          {`
+            #${inputId}::placeholder {
+              color: ${theme.colors.text.secondary};
+              opacity: 1;
+            }
+          `}
+        </style>
         <input
+          id={inputId}
           ref={ref}
           className={`input ${className}`}
           {...props}
