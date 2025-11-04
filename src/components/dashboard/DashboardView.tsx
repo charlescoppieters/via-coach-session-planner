@@ -174,7 +174,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const weekday = today.toLocaleDateString('en-US', { weekday: 'long' });
 
     return {
-      dayWithMonth: `${day}${getOrdinalSuffix(day)} ${month} ${year}`,
+      dayWithMonth: `${day}${getOrdinalSuffix(day)} ${month}, ${year}`,
       weekday: weekday,
     };
   };

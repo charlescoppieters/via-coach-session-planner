@@ -79,7 +79,6 @@ export const MethodologyView: React.FC<MethodologyViewProps> = ({
         display: 'flex',
         flexDirection: 'column',
         padding: theme.spacing.xl,
-        paddingRight: `calc(${theme.spacing.xl} + ${theme.spacing.xl})`,
       }}>
         {selectedView ? (
           <div style={{

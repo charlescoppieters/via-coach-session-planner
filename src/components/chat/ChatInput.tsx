@@ -30,7 +30,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     <div
       style={{
         padding: theme.spacing.lg,
-        background: `linear-gradient(135deg, ${theme.colors.background.secondary} 0%, ${theme.colors.background.tertiary} 100%)`,
+        backgroundColor: theme.colors.background.secondary,
         borderTop: `1px solid ${theme.colors.border.secondary}`,
       }}
     >

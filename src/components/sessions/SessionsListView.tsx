@@ -273,7 +273,6 @@ export const SessionsListView: React.FC<SessionsListViewProps> = ({
         style={{
           flex: 1,
           padding: theme.spacing.xl,
-          paddingRight: `calc(${theme.spacing.xl} + ${theme.spacing.xl})`,
           overflowY: 'auto',
           display: 'flex',
           flexDirection: 'column',
