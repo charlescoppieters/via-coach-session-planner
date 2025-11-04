@@ -127,10 +127,10 @@ export async function deleteSessionAttendance(sessionId: string) {
         .eq('session_id', sessionId)
 
       if (error) throw error
-      return { error: null }
+      return { data: null, error: null }
     } catch (error) {
       console.error('Error deleting session attendance:', error)
-      return { error: error instanceof Error ? error.message : 'Unknown error' }
+      return { data: null, error: error instanceof Error ? error.message : 'Unknown error' }
     }
   })
 }

@@ -103,6 +103,7 @@ export default function LoginPage() {
       setOtpError(error);
       setIsLoading(false);
     } else if (data?.user) {
+      const userId = data.user.id; // Store user ID for use in callback
       setOtpScreenFading(true);
 
       setTimeout(() => {
@@ -118,7 +119,7 @@ export default function LoginPage() {
         const { data: coachData } = await supabase
           .from('coaches')
           .select('onboarding_completed')
-          .eq('auth_user_id', data.user.id)
+          .eq('auth_user_id', userId)
           .single();
 
         if (coachData && !coachData.onboarding_completed) {
