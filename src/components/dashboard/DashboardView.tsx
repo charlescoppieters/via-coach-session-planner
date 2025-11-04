@@ -170,10 +170,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const today = new Date();
     const day = today.getDate();
     const month = today.toLocaleDateString('en-US', { month: 'long' });
+    const year = today.getFullYear();
     const weekday = today.toLocaleDateString('en-US', { weekday: 'long' });
 
     return {
-      dayWithMonth: `${day}${getOrdinalSuffix(day)} ${month}`,
+      dayWithMonth: `${day}${getOrdinalSuffix(day)} ${month} ${year}`,
       weekday: weekday,
     };
   };

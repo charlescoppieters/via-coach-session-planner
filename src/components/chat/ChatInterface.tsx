@@ -67,7 +67,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             >
               <p
                 style={{
-                  color: theme.colors.text.muted,
+                  color: theme.colors.text.secondary,
                   margin: 0,
                   fontSize: theme.typography.fontSize.base,
                   lineHeight: 1.6,
