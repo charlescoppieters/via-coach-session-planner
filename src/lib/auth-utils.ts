@@ -1,4 +1,14 @@
-import { supabase } from './supabase'
+import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
+
+/**
+ * Validates an email address format
+ */
+export function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(email.trim())
+}
 
 // Force refresh the auth session in the client
 export async function forceAuthRefresh() {

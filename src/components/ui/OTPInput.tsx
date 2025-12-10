@@ -36,9 +36,14 @@ export const OTPInput: React.FC<OTPInputProps> = ({
       inputRefs.current[index + 1]?.focus()
     }
 
-    // Call onComplete when all digits are filled
-    if (newOtp.every(digit => digit !== '') && onComplete) {
-      onComplete(newOtp.join(''))
+    // Call onComplete and onSubmit when all digits are filled
+    if (newOtp.every(digit => digit !== '')) {
+      if (onComplete) {
+        onComplete(newOtp.join(''))
+      }
+      if (onSubmit) {
+        onSubmit()
+      }
     }
   }
 
@@ -74,8 +79,13 @@ export const OTPInput: React.FC<OTPInputProps> = ({
     const focusIndex = nextEmptyIndex === -1 ? length - 1 : nextEmptyIndex
     inputRefs.current[focusIndex]?.focus()
 
-    if (newOtp.every(digit => digit !== '') && onComplete) {
-      onComplete(newOtp.join(''))
+    if (newOtp.every(digit => digit !== '')) {
+      if (onComplete) {
+        onComplete(newOtp.join(''))
+      }
+      if (onSubmit) {
+        onSubmit()
+      }
     }
   }
 

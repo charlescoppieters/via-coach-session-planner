@@ -7,7 +7,9 @@ import { CreateSessionModal } from './CreateSessionModal';
 import { CommentModal } from './CommentModal';
 import { getSessions, createSession, deleteSession } from '@/lib/sessions';
 import type { Session, Team } from '@/types/database';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 
 interface SessionsListViewProps {
   coachId: string;
@@ -81,19 +83,19 @@ export const SessionsListView: React.FC<SessionsListViewProps> = ({
     };
   }, [team.id]);
 
-  // Categorize sessions by date
+  // Categorize sessions by whether they've ended (session_date + duration)
   const categorizeSessions = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
 
     const upcoming: Session[] = [];
     const previous: Session[] = [];
 
     sessions.forEach((session) => {
-      const sessionDate = new Date(session.session_date);
-      sessionDate.setHours(0, 0, 0, 0);
+      const sessionStart = new Date(session.session_date);
+      // Calculate session end time by adding duration (in minutes)
+      const sessionEnd = new Date(sessionStart.getTime() + session.duration * 60 * 1000);
 
-      if (sessionDate >= today) {
+      if (sessionEnd > now) {
         upcoming.push(session);
       } else {
         previous.push(session);
@@ -122,7 +124,10 @@ export const SessionsListView: React.FC<SessionsListViewProps> = ({
     skill_level: string;
     content: string;
   }) => {
-    const { data, error } = await createSession(sessionData);
+    const { data, error } = await createSession({
+      ...sessionData,
+      club_id: team.club_id,
+    });
 
     if (error) {
       console.error('Error creating session:', error);
@@ -227,16 +232,28 @@ export const SessionsListView: React.FC<SessionsListViewProps> = ({
               color: theme.colors.text.primary,
             }}
           />
-          <h1
-            style={{
-              fontSize: theme.typography.fontSize['3xl'],
-              fontWeight: theme.typography.fontWeight.bold,
-              color: theme.colors.text.primary,
-              margin: 0,
-            }}
-          >
-            Sessions
-          </h1>
+          <div>
+            <h1
+              style={{
+                fontSize: theme.typography.fontSize['2xl'],
+                fontWeight: theme.typography.fontWeight.bold,
+                color: theme.colors.text.primary,
+                margin: 0,
+              }}
+            >
+              Session Planning
+            </h1>
+            <p
+              style={{
+                fontSize: theme.typography.fontSize.sm,
+                color: theme.colors.text.secondary,
+                margin: 0,
+                marginTop: '2px',
+              }}
+            >
+              {team.name}
+            </p>
+          </div>
         </div>
 
         {/* Create Session Button */}
@@ -293,100 +310,93 @@ export const SessionsListView: React.FC<SessionsListViewProps> = ({
         ) : (
           <>
             {/* Upcoming Sessions Section */}
-            <div style={{
-              marginBottom: theme.spacing.xl,
-              flex: upcoming.length === 0 && previous.length === 0 ? 1 : undefined,
-              display: 'flex',
-              flexDirection: 'column',
-            }}>
+            <div style={{ marginBottom: theme.spacing.xl }}>
               <h2
                 style={{
-                  fontSize: theme.typography.fontSize.xl,
-                  fontWeight: theme.typography.fontWeight.bold,
+                  fontSize: theme.typography.fontSize.lg,
+                  fontWeight: theme.typography.fontWeight.semibold,
                   color: theme.colors.text.primary,
                   margin: 0,
-                  marginBottom: theme.spacing.lg,
+                  marginBottom: theme.spacing.md,
                 }}
               >
                 Upcoming Sessions
               </h2>
               {upcoming.length > 0 ? (
-                upcoming.map((session) => (
-                  <SessionCard
-                    key={session.id}
-                    session={session}
-                    teamName={team.name}
-                    onView={(id) => onSessionSelect(id, 'view')}
-                    onEdit={(id) => onSessionSelect(id, 'edit')}
-                    onComment={handleCommentSession}
-                    onDelete={handleDeleteSession}
-                  />
-                ))
-              ) : (
                 <div
                   style={{
                     display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flex: 1,
-                    padding: theme.spacing.xl,
-                    color: theme.colors.text.secondary,
-                    textAlign: 'center',
+                    gap: theme.spacing.md,
+                    overflowX: 'auto',
+                    paddingBottom: theme.spacing.sm,
                   }}
                 >
-                  <p style={{ fontSize: theme.typography.fontSize.sm, margin: 0 }}>
-                    No upcoming sessions
-                  </p>
+                  {upcoming.map((session) => (
+                    <SessionCard
+                      key={session.id}
+                      session={session}
+                      teamName={team.name}
+                      onView={(id) => onSessionSelect(id, 'view')}
+                      onEdit={(id) => onSessionSelect(id, 'edit')}
+                      onDelete={handleDeleteSession}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    padding: theme.spacing.lg,
+                    color: theme.colors.text.secondary,
+                    fontSize: theme.typography.fontSize.sm,
+                  }}
+                >
+                  No upcoming sessions
                 </div>
               )}
             </div>
 
             {/* Previous Sessions Section */}
-            <div style={{
-              flex: upcoming.length === 0 && previous.length === 0 ? 1 : undefined,
-              display: 'flex',
-              flexDirection: 'column',
-            }}>
+            <div>
               <h2
                 style={{
-                  fontSize: theme.typography.fontSize.xl,
-                  fontWeight: theme.typography.fontWeight.bold,
+                  fontSize: theme.typography.fontSize.lg,
+                  fontWeight: theme.typography.fontWeight.semibold,
                   color: theme.colors.text.primary,
                   margin: 0,
-                  marginBottom: theme.spacing.lg,
+                  marginBottom: theme.spacing.md,
                 }}
               >
                 Previous Sessions
               </h2>
               {previous.length > 0 ? (
-                previous.map((session) => (
-                  <SessionCard
-                    key={session.id}
-                    session={session}
-                    teamName={team.name}
-                    onView={(id) => onSessionSelect(id, 'view')}
-                    onEdit={(id) => onSessionSelect(id, 'edit')}
-                    onComment={handleCommentSession}
-                    onDelete={handleDeleteSession}
-                  />
-                ))
-              ) : (
                 <div
                   style={{
                     display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flex: 1,
-                    padding: theme.spacing.xl,
-                    color: theme.colors.text.secondary,
-                    textAlign: 'center',
+                    gap: theme.spacing.md,
+                    overflowX: 'auto',
+                    paddingBottom: theme.spacing.sm,
                   }}
                 >
-                  <p style={{ fontSize: theme.typography.fontSize.sm, margin: 0 }}>
-                    No previous sessions
-                  </p>
+                  {previous.map((session) => (
+                    <SessionCard
+                      key={session.id}
+                      session={session}
+                      teamName={team.name}
+                      onView={(id) => onSessionSelect(id, 'view')}
+                      onComment={handleCommentSession}
+                      onDelete={handleDeleteSession}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    padding: theme.spacing.lg,
+                    color: theme.colors.text.secondary,
+                    fontSize: theme.typography.fontSize.sm,
+                  }}
+                >
+                  No previous sessions
                 </div>
               )}
             </div>

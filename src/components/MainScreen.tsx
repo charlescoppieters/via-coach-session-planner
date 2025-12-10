@@ -7,7 +7,9 @@ import { mainVariants } from '@/constants/animations';
 import { SessionsListView } from '@/components/sessions/SessionsListView';
 import { SessionDetailView } from '@/components/sessions/SessionDetailView';
 import type { Team } from '@/types/database';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 
 interface MainScreenProps {
   sessionId?: string | null;

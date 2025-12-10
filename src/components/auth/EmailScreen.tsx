@@ -5,7 +5,6 @@ import { motion } from 'framer-motion';
 import { CgSpinnerAlt } from "react-icons/cg";
 import { Input } from "@/components/ui/Input";
 import { theme } from "@/styles/theme";
-import { emailVariants } from '@/constants/animations';
 
 interface EmailScreenProps {
   email: string;
@@ -25,13 +24,8 @@ export const EmailScreen: React.FC<EmailScreenProps> = ({
   onSubmit
 }) => {
   return (
-    <motion.div
-      key="email"
-      variants={emailVariants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-    >
+    <div>
+      {/* Email Input */}
       <div style={{ position: 'relative' }}>
         <Input
           type="email"
@@ -77,51 +71,47 @@ export const EmailScreen: React.FC<EmailScreenProps> = ({
             Please enter a valid email address
           </p>
         </motion.div>
+      </div>
 
-        {/* Loading indicator */}
-        {isLoading && (
+      {/* Loading indicator */}
+      {isLoading && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          style={{
+            marginTop: theme.spacing.md,
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: theme.spacing.sm,
+          }}
+        >
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
             style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              right: 0,
-              marginTop: theme.spacing.md,
-              pointerEvents: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: theme.spacing.sm,
+              display: 'inline-block',
+              transformOrigin: 'center center',
+              willChange: 'transform',
             }}
           >
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              style={{
-                display: 'inline-block',
-                transformOrigin: 'center center',
-                willChange: 'transform',
-              }}
-            >
-              <CgSpinnerAlt
-                size={16}
-                color={theme.colors.gold.main}
-              />
-            </motion.div>
-            <p
-              style={{
-                color: theme.colors.text.muted,
-                fontSize: theme.typography.fontSize.sm,
-                margin: 0,
-              }}
-            >
-              Sending code...
-            </p>
+            <CgSpinnerAlt
+              size={16}
+              color={theme.colors.gold.main}
+            />
           </motion.div>
-        )}
-      </div>
-    </motion.div>
+          <p
+            style={{
+              color: theme.colors.text.muted,
+              fontSize: theme.typography.fontSize.sm,
+              margin: 0,
+            }}
+          >
+            Sending code...
+          </p>
+        </motion.div>
+      )}
+    </div>
   );
 };

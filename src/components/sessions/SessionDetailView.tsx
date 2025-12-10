@@ -4,11 +4,14 @@ import { FaArrowLeft } from 'react-icons/fa';
 import { GiSoccerBall } from 'react-icons/gi';
 import { theme } from '@/styles/theme';
 import { SessionEditor } from '@/components/sessions/SessionEditor';
+import { BlockEditor } from '@/components/sessions/BlockEditor';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { ChatInput } from '@/components/chat/ChatInput';
 import type { ChatMessageType } from '@/components/chat/ChatMessage';
 import type { Session, Team } from '@/types/database';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 
 interface SessionDetailViewProps {
   sessionId: string;
@@ -85,34 +88,11 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
     fetchSession();
   }, [sessionId, mode]);
 
-  // Fetch coaching rules when session or team changes
+  // TODO: Fetch methodology data from v2 tables (playing_methodology, training_methodology)
+  // For now, rules are empty until methodology migration is complete
   useEffect(() => {
-    const fetchCoachingRules = async () => {
-      if (!coachId) return;
-
-      try {
-        // Fetch global rules
-        const { data: globalData } = await supabase
-          .from('coaching_rules')
-          .select('content')
-          .is('team_id', null)
-          .eq('is_active', true);
-
-        // Fetch team-specific rules
-        const { data: teamData } = await supabase
-          .from('coaching_rules')
-          .select('content')
-          .eq('team_id', team.id)
-          .eq('is_active', true);
-
-        setGlobalRules(globalData || []);
-        setTeamRules(teamData || []);
-      } catch (error) {
-        console.error('Failed to fetch coaching rules:', error);
-      }
-    };
-
-    fetchCoachingRules();
+    setGlobalRules([]);
+    setTeamRules([]);
   }, [coachId, team.id]);
 
   // Fetch players with IDP data for the team
@@ -257,7 +237,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
       {/* Header with Title and Back Button */}
       <div
         style={{
-          padding: theme.spacing.xl,
+          padding: `${theme.spacing.xl} ${theme.spacing.xl} ${theme.spacing.md} ${theme.spacing.xl}`,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -278,16 +258,28 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
               color: theme.colors.text.primary,
             }}
           />
-          <h1
-            style={{
-              fontSize: theme.typography.fontSize['3xl'],
-              fontWeight: theme.typography.fontWeight.bold,
-              color: theme.colors.text.primary,
-              margin: 0,
-            }}
-          >
-            Sessions
-          </h1>
+          <div>
+            <h1
+              style={{
+                fontSize: theme.typography.fontSize['2xl'],
+                fontWeight: theme.typography.fontWeight.bold,
+                color: theme.colors.text.primary,
+                margin: 0,
+              }}
+            >
+              Session Planning
+            </h1>
+            <p
+              style={{
+                fontSize: theme.typography.fontSize.sm,
+                color: theme.colors.text.secondary,
+                margin: 0,
+                marginTop: '2px',
+              }}
+            >
+              {team.name}
+            </p>
+          </div>
         </div>
 
         {/* Back Button */}
@@ -327,7 +319,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
           flex: 1,
           display: 'flex',
           gap: theme.spacing.lg,
-          padding: theme.spacing.md,
+          padding: `${theme.spacing.sm} ${theme.spacing.md} ${theme.spacing.md} ${theme.spacing.md}`,
           height: '100%',
           overflow: 'hidden',
         }}
@@ -381,25 +373,20 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
               </div>
             </div>
 
-            {/* Session Content - Read Only */}
-            <div
-              style={{
-                flex: 1,
-                padding: theme.spacing.xl,
-                overflowY: 'auto',
-                color: theme.colors.text.primary,
-                fontSize: theme.typography.fontSize.base,
-                lineHeight: '1.8',
-                whiteSpace: 'pre-wrap',
-              }}
-            >
-              {sessionContent || 'No content available'}
+            {/* Session Blocks - Read Only */}
+            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <BlockEditor
+                sessionId={sessionId}
+                coachId={coachId}
+                clubId={currentSession?.club_id || null}
+                readOnly={true}
+              />
             </div>
           </div>
         ) : (
-          /* Edit Mode - Session Editor + AI Chat */
+          /* Edit Mode - Session Editor (Full Width) */
           <>
-            {/* Session Editor */}
+            {/* Session Editor - Full Width */}
             <SessionEditor
               sessionId={sessionId}
               coachId={coachId}
@@ -409,65 +396,67 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
               isAILoading={isAILoading}
             />
 
-            {/* AI Chat Interface */}
-            <div
-              style={{
-                width: '50%',
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                background: theme.colors.background.secondary,
-                borderRadius: theme.borderRadius.lg,
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
-                overflow: 'hidden',
-              }}
-            >
-              {/* Fixed Header */}
+            {/* AI Chat Interface - Hidden for now */}
+            {false && (
               <div
                 style={{
-                  padding: theme.spacing.lg,
+                  width: '50%',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
                   background: theme.colors.background.secondary,
-                  borderBottom: `1px solid ${theme.colors.border.secondary}`,
-                  flexShrink: 0,
+                  borderRadius: theme.borderRadius.lg,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+                  overflow: 'hidden',
                 }}
               >
-                <h3
+                {/* Fixed Header */}
+                <div
                   style={{
-                    color: theme.colors.text.primary,
-                    fontSize: theme.typography.fontSize.lg,
-                    fontWeight: theme.typography.fontWeight.semibold,
-                    margin: 0,
-                    letterSpacing: '-0.025em',
+                    padding: theme.spacing.lg,
+                    background: theme.colors.background.secondary,
+                    borderBottom: `1px solid ${theme.colors.border.secondary}`,
+                    flexShrink: 0,
                   }}
                 >
-                  AI Coach Helper
-                </h3>
-                <p
-                  style={{
-                    color: theme.colors.text.primary,
-                    fontSize: theme.typography.fontSize.sm,
-                    margin: `${theme.spacing.xs} 0 0 0`,
-                    opacity: 0.8,
-                  }}
-                >
-                  Get help planning your session
-                </p>
-              </div>
+                  <h3
+                    style={{
+                      color: theme.colors.text.primary,
+                      fontSize: theme.typography.fontSize.lg,
+                      fontWeight: theme.typography.fontWeight.semibold,
+                      margin: 0,
+                      letterSpacing: '-0.025em',
+                    }}
+                  >
+                    AI Coach Helper
+                  </h3>
+                  <p
+                    style={{
+                      color: theme.colors.text.primary,
+                      fontSize: theme.typography.fontSize.sm,
+                      margin: `${theme.spacing.xs} 0 0 0`,
+                      opacity: 0.8,
+                    }}
+                  >
+                    Get help planning your session
+                  </p>
+                </div>
 
-              {/* Scrollable Messages Area */}
-              <ChatInterface
-                messages={chatMessages}
-              />
-
-              {/* Fixed Input at Bottom */}
-              <div style={{ flexShrink: 0 }}>
-                <ChatInput
-                  value={chatInput}
-                  onChange={setChatInput}
-                  onSend={handleSendMessage}
+                {/* Scrollable Messages Area */}
+                <ChatInterface
+                  messages={chatMessages}
                 />
+
+                {/* Fixed Input at Bottom */}
+                <div style={{ flexShrink: 0 }}>
+                  <ChatInput
+                    value={chatInput}
+                    onChange={setChatInput}
+                    onSend={handleSendMessage}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>

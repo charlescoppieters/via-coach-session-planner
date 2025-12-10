@@ -1,5 +1,8 @@
-import { supabase } from './supabase'
+import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
 import { withSessionRetry } from './session-utils'
+import { copyClubMethodologyToTeam } from './methodology'
 import type { TeamInsert, TeamUpdate } from '@/types/database'
 
 export async function getTeams(coachId: string) {
@@ -48,6 +51,19 @@ export async function createTeam(teamData: TeamInsert) {
         .single()
 
       if (error) throw error
+
+      // Copy club methodology to the new team
+      if (data) {
+        const { error: methodologyError } = await copyClubMethodologyToTeam(
+          data.id,
+          data.club_id,
+          data.created_by_coach_id
+        )
+        if (methodologyError) {
+          console.warn('Warning: Failed to copy methodology to team:', methodologyError)
+        }
+      }
+
       return { data, error: null }
     } catch (error) {
       console.error('Error creating team:', error)

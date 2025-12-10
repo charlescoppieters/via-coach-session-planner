@@ -5,23 +5,12 @@ import { theme } from '@/styles/theme';
 import { ImageUploader } from './ImageUploader';
 import { uploadProfilePicture } from '@/lib/storage';
 
-const POSITION_OPTIONS = [
-  'Head Coach',
-  'Assistant Coach',
-  'Director of Coaching',
-  'Technical Director',
-  'Goalkeeper Coach',
-  'Fitness Coach',
-  'Academy Coach',
-  'Youth Coach',
-  'Other',
-];
-
 interface ProfileSetupStepProps {
   initialName: string;
   coachId: string;
-  onNext: (data: { name: string; position: string; profilePicturePath: string | null }) => void;
+  onNext: (data: { name: string; profilePicturePath: string | null }) => void;
   onBack: () => void;
+  nextButtonText?: string;
 }
 
 export const ProfileSetupStep: React.FC<ProfileSetupStepProps> = ({
@@ -29,9 +18,9 @@ export const ProfileSetupStep: React.FC<ProfileSetupStepProps> = ({
   coachId,
   onNext,
   onBack,
+  nextButtonText = 'Next',
 }) => {
   const [name, setName] = useState('');
-  const [position, setPosition] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [profilePicturePath, setProfilePicturePath] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -66,19 +55,13 @@ export const ProfileSetupStep: React.FC<ProfileSetupStepProps> = ({
       return;
     }
 
-    if (!position) {
-      alert('Please select your position');
-      return;
-    }
-
     onNext({
       name: name.trim(),
-      position,
       profilePicturePath,
     });
   };
 
-  const isValid = name.trim() && position && !uploading;
+  const isValid = name.trim() && !uploading;
 
   return (
     <div style={{
@@ -96,7 +79,7 @@ export const ProfileSetupStep: React.FC<ProfileSetupStepProps> = ({
         marginBottom: theme.spacing.sm,
         textAlign: 'center',
       }}>
-        Set Up Your Profile
+        Set Up Your Coach Profile
       </h2>
       <p style={{
         fontSize: theme.typography.fontSize.base,
@@ -120,7 +103,7 @@ export const ProfileSetupStep: React.FC<ProfileSetupStepProps> = ({
           letterSpacing: '0.05em',
           textAlign: 'center',
         }}>
-          Club Badge (Optional)
+          Profile Picture (Optional)
         </label>
         <ImageUploader
           currentImage={profilePicturePath}
@@ -145,7 +128,7 @@ export const ProfileSetupStep: React.FC<ProfileSetupStepProps> = ({
       </div>
 
       {/* Name Input */}
-      <div style={{ marginBottom: theme.spacing.lg }}>
+      <div style={{ marginBottom: theme.spacing.xl }}>
         <label style={{
           display: 'block',
           fontSize: theme.typography.fontSize.sm,
@@ -180,58 +163,6 @@ export const ProfileSetupStep: React.FC<ProfileSetupStepProps> = ({
             e.target.style.borderColor = theme.colors.border.primary;
           }}
         />
-      </div>
-
-      {/* Position Dropdown */}
-      <div style={{ marginBottom: theme.spacing.xl }}>
-        <label style={{
-          display: 'block',
-          fontSize: theme.typography.fontSize.sm,
-          fontWeight: theme.typography.fontWeight.semibold,
-          color: theme.colors.text.secondary,
-          marginBottom: theme.spacing.xs,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-        }}>
-          Position *
-        </label>
-        <select
-          value={position}
-          onChange={(e) => setPosition(e.target.value)}
-          style={{
-            width: '100%',
-            padding: theme.spacing.md,
-            fontSize: theme.typography.fontSize.base,
-            color: position ? theme.colors.text.primary : theme.colors.text.secondary,
-            backgroundColor: theme.colors.background.primary,
-            border: `2px solid ${theme.colors.border.primary}`,
-            borderRadius: theme.borderRadius.md,
-            outline: 'none',
-            boxSizing: 'border-box',
-            cursor: 'pointer',
-            appearance: 'none',
-            backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-            backgroundRepeat: 'no-repeat',
-            backgroundPosition: 'right 0.7rem center',
-            backgroundSize: '1.2em',
-            paddingRight: '2.5rem',
-          }}
-          onFocus={(e) => {
-            e.target.style.borderColor = theme.colors.gold.main;
-          }}
-          onBlur={(e) => {
-            e.target.style.borderColor = theme.colors.border.primary;
-          }}
-        >
-          <option value="" disabled>
-            Select your position
-          </option>
-          {POSITION_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
       </div>
 
       {/* Navigation Buttons */}
@@ -290,7 +221,7 @@ export const ProfileSetupStep: React.FC<ProfileSetupStepProps> = ({
             }
           }}
         >
-          Next
+          {nextButtonText}
         </button>
       </div>
     </div>

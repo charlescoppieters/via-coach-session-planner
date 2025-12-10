@@ -4,7 +4,6 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { OTPInput } from "@/components/ui/OTPInput";
 import { theme } from "@/styles/theme";
-import { otpVariants } from '@/constants/animations';
 
 interface OTPScreenProps {
   email: string;
@@ -24,34 +23,16 @@ export const OTPScreen: React.FC<OTPScreenProps> = ({
   onBack
 }) => {
   return (
-    <motion.div
-      key="otp"
-      variants={otpVariants}
-      initial="initial"
-      animate={otpScreenFading ? {
-        opacity: 0,
-        x: -100,
-        scale: 0.95
-      } : "animate"}
-      exit={{
-        opacity: 0,
-        x: 100,
-        scale: 0.95,
-        transition: { duration: 0.4, ease: "easeInOut" }
-      }}
-      transition={otpScreenFading ? { duration: 0.4, ease: "easeInOut" } : undefined}
-    >
-      {/* Title */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{
-          opacity: 1,
-          y: 0,
-          transition: { delay: 0.2, duration: 0.4 }
-        }}
+    <div style={{ position: 'relative' }}>
+      {/* Title - positioned above the input */}
+      <div
         style={{
-          textAlign: 'center',
+          position: 'absolute',
+          bottom: '100%',
+          left: 0,
+          right: 0,
           marginBottom: theme.spacing.xl,
+          textAlign: 'center',
         }}
       >
         <h2
@@ -74,9 +55,9 @@ export const OTPScreen: React.FC<OTPScreenProps> = ({
         >
           Enter the 6-digit code sent to {email}
         </p>
-      </motion.div>
+      </div>
 
-      {/* OTP Input */}
+      {/* OTP Input - this is the anchor element */}
       <div style={{ position: 'relative' }}>
         <OTPInput
           length={6}
@@ -113,25 +94,18 @@ export const OTPScreen: React.FC<OTPScreenProps> = ({
       </div>
 
       {/* Back to email link */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{
-          opacity: 1,
-          transition: { delay: 0.4, duration: 0.4 }
-        }}
+      <div
         style={{
           textAlign: 'center',
-          marginTop: theme.spacing['2xl'],
+          marginTop: theme.spacing.lg,
         }}
       >
-        <motion.button
+        <button
           onClick={onBack}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
           style={{
             background: 'none',
             border: 'none',
-            color: theme.colors.gold.main,
+            color: theme.colors.text.secondary,
             fontSize: theme.typography.fontSize.sm,
             cursor: 'pointer',
             textDecoration: 'underline',
@@ -139,8 +113,8 @@ export const OTPScreen: React.FC<OTPScreenProps> = ({
           }}
         >
           Back
-        </motion.button>
-      </motion.div>
-    </motion.div>
+        </button>
+      </div>
+    </div>
   );
 };

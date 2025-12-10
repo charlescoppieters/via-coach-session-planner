@@ -1,5 +1,7 @@
-import { supabase } from './supabase'
-import type { CoachInsert } from '@/types/database'
+import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
+import type { CoachInsert, Club, ClubMembership } from '@/types/database'
 
 export async function signInWithOTP(email: string) {
   try {
@@ -48,9 +50,8 @@ export async function verifyOTP(email: string, token: string) {
   }
 }
 
-async function ensureCoachProfile(userId: string, email: string) {
+export async function ensureCoachProfile(userId: string, email: string) {
   try {
-
     // Check if coach profile exists
     const { data: existingCoach, error: fetchError } = await supabase
       .from('coaches')
@@ -62,13 +63,13 @@ async function ensureCoachProfile(userId: string, email: string) {
       return existingCoach
     }
 
-    // Create coach profile if it doesn't exist
+    // Create coach profile if it doesn't exist (PGRST116 = row not found)
     if (fetchError?.code === 'PGRST116') {
       const coachData: CoachInsert = {
         auth_user_id: userId,
         email,
-        name: email.split('@')[0], // Default name from email (can be customized in onboarding)
-        onboarding_completed: false, // New users must complete onboarding wizard
+        name: email.split('@')[0],
+        onboarding_completed: false,
       }
 
       const { data: newCoach, error: createError } = await supabase
@@ -150,5 +151,86 @@ export async function resendOTP(email: string) {
   } catch (error) {
     console.error('Error resending OTP:', error)
     return { data: null, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+}
+
+// ========================================
+// Club Functions
+// ========================================
+
+/**
+ * Creates a new club and makes the current coach an admin
+ * Uses a secure RPC function to handle the atomic creation of both club and membership
+ */
+export async function createClub(
+  name: string,
+  coachId: string,
+  logoUrl?: string
+): Promise<{ club: Club | null; membership: ClubMembership | null; error: string | null }> {
+  try {
+    if (!name.trim()) {
+      return { club: null, membership: null, error: 'Club name is required' }
+    }
+
+    // Use the secure RPC function that handles club + membership creation atomically
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase.rpc as any)('create_club_with_membership', {
+      club_name: name.trim(),
+      club_logo_url: logoUrl || null,
+    })
+
+    if (error) {
+      console.error('Error in create_club_with_membership RPC:', error)
+      return { club: null, membership: null, error: error.message }
+    }
+
+    if (!data) {
+      return { club: null, membership: null, error: 'No data returned from club creation' }
+    }
+
+    // The RPC returns { club: {...}, membership: {...} }
+    const result = data as { club: Club; membership: ClubMembership }
+
+    return { club: result.club, membership: result.membership, error: null }
+  } catch (error) {
+    console.error('Error creating club:', error)
+    return { club: null, membership: null, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+}
+
+/**
+ * Gets the club membership for a coach (including club data)
+ */
+export async function getCoachClubMembership(
+  coachId: string
+): Promise<{ club: Club | null; membership: ClubMembership | null; error: string | null }> {
+  try {
+    // Get the membership with club data
+    const { data: membership, error: membershipError } = await supabase
+      .from('club_memberships')
+      .select('*')
+      .eq('coach_id', coachId)
+      .single()
+
+    if (membershipError?.code === 'PGRST116') {
+      // No membership found - coach hasn't joined a club yet
+      return { club: null, membership: null, error: null }
+    }
+
+    if (membershipError) throw membershipError
+
+    // Get the club data
+    const { data: club, error: clubError } = await supabase
+      .from('clubs')
+      .select('*')
+      .eq('id', membership.club_id)
+      .single()
+
+    if (clubError) throw clubError
+
+    return { club, membership, error: null }
+  } catch (error) {
+    console.error('Error getting coach club membership:', error)
+    return { club: null, membership: null, error: error instanceof Error ? error.message : 'Unknown error' }
   }
 }

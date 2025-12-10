@@ -4,9 +4,8 @@ import type { Team } from '@/types/database';
 
 interface PlayerFormProps {
   team: Team;
-  coachId: string;
   onCreate: (playerData: {
-    coach_id: string;
+    club_id: string;
     team_id: string;
     name: string;
     age?: number | null;
@@ -25,7 +24,7 @@ function extractAgeFromAgeGroup(ageGroup: string): number | null {
   return match ? parseInt(match[0]) : null;
 }
 
-export const PlayerForm: React.FC<PlayerFormProps> = ({ team, coachId, onCreate, onCancel }) => {
+export const PlayerForm: React.FC<PlayerFormProps> = ({ team, onCreate, onCancel }) => {
   const [formData, setFormData] = useState({
     name: '',
     age: extractAgeFromAgeGroup(team.age_group),
@@ -55,7 +54,7 @@ export const PlayerForm: React.FC<PlayerFormProps> = ({ team, coachId, onCreate,
 
     setIsSaving(true);
     console.log('Creating player with data:', {
-      coach_id: coachId,
+      club_id: team.club_id,
       team_id: team.id,
       name: formData.name,
       age: formData.age,
@@ -67,7 +66,7 @@ export const PlayerForm: React.FC<PlayerFormProps> = ({ team, coachId, onCreate,
     });
     try {
       await onCreate({
-        coach_id: coachId,
+        club_id: team.club_id,
         team_id: team.id,
         name: formData.name,
         age: formData.age,

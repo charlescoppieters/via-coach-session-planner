@@ -4,13 +4,15 @@ import React, { useState, useEffect } from 'react';
 import { MdDashboard, MdGroup } from "react-icons/md";
 import { GiSoccerBall } from "react-icons/gi";
 import { IoSettingsSharp, IoLogOut } from "react-icons/io5";
-import { FaGraduationCap } from "react-icons/fa";
 import { theme } from "@/styles/theme";
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 import { getTeams } from '@/lib/teams';
 import { getProfilePictureUrl } from '@/lib/storage';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Team } from '@/types/database';
+import { FaBook } from 'react-icons/fa';
 import Image from 'next/image';
 
 interface SidebarProps {
@@ -31,7 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onTeamsLoad,
 }) => {
-  const { coach } = useAuth();
+  const { coach, isAdmin } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
   const [isLoadingTeams, setIsLoadingTeams] = useState(true);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
@@ -355,12 +357,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           isSelected={currentView === 'sessions'}
         />
         <NavItem
-          icon={FaGraduationCap}
-          label="Methodology"
-          view="methodology"
-          isSelected={currentView === 'methodology'}
-        />
-        <NavItem
           icon={MdGroup}
           label="Players"
           view="players"
@@ -379,9 +375,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
         flexDirection: 'column',
         gap: theme.spacing.xs,
       }}>
+        {isAdmin && (
+          <NavItem
+            icon={FaBook}
+            label="Club Methodology"
+            view="methodology"
+            isSelected={currentView === 'methodology'}
+          />
+        )}
         <NavItem
           icon={IoSettingsSharp}
-          label="Team Settings"
+          label="Club Settings"
           view="settings"
           isSelected={currentView === 'settings'}
         />

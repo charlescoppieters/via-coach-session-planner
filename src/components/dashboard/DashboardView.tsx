@@ -11,7 +11,9 @@ import { WeeklyStats } from '@/components/dashboard/WeeklyStats';
 import { AttendanceTracker } from '@/components/attendance/AttendanceTracker';
 import { getSessions } from '@/lib/sessions';
 import { getSessionAttendance } from '@/lib/attendance';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 import type { Session, Team } from '@/types/database';
 
 interface DashboardViewProps {

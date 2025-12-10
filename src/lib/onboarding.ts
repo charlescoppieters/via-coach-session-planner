@@ -1,5 +1,8 @@
-import { supabase } from './supabase';
-import type { CoachUpdate } from '@/types/database';
+import { createClient } from '@/lib/supabase/client';
+import { copyClubMethodologyToTeam } from '@/lib/methodology';
+
+const supabase = createClient();
+import type { CoachUpdate, TeamInsert, TeamCoachInsert } from '@/types/database';
 
 /**
  * Updates coach profile during onboarding
@@ -61,9 +64,10 @@ export const completeOnboarding = async (
 };
 
 /**
- * Creates the first team for a coach during onboarding
+ * Creates a team for v2 (club-based ownership)
  */
-export const createFirstTeam = async (
+export const createTeamV2 = async (
+  clubId: string,
   coachId: string,
   teamData: {
     name: string;
@@ -76,44 +80,78 @@ export const createFirstTeam = async (
   }
 ): Promise<{ data: any; error: string | null }> => {
   try {
-    const { data, error } = await supabase
+    // Create the team
+    const teamInsert: TeamInsert = {
+      club_id: clubId,
+      name: teamData.name,
+      age_group: teamData.age_group,
+      skill_level: teamData.skill_level,
+      player_count: teamData.player_count,
+      sessions_per_week: teamData.sessions_per_week,
+      session_duration: teamData.session_duration,
+      gender: teamData.gender || null,
+      created_by_coach_id: coachId,
+    };
+
+    const { data: team, error: teamError } = await supabase
       .from('teams')
-      .insert({
-        coach_id: coachId,
-        name: teamData.name,
-        age_group: teamData.age_group,
-        skill_level: teamData.skill_level,
-        player_count: teamData.player_count,
-        sessions_per_week: teamData.sessions_per_week,
-        session_duration: teamData.session_duration,
-        gender: teamData.gender || null,
-      })
+      .insert(teamInsert)
       .select()
       .single();
 
-    if (error) {
-      console.error('Error creating first team:', error);
-      return { data: null, error: error.message };
+    if (teamError) {
+      console.error('Error creating team:', teamError);
+      return { data: null, error: teamError.message };
     }
 
-    return { data, error: null };
+    // Assign the coach to the team
+    const coachAssignment: TeamCoachInsert = {
+      team_id: team.id,
+      coach_id: coachId,
+    };
+
+    const { error: assignError } = await supabase
+      .from('team_coaches')
+      .insert(coachAssignment);
+
+    if (assignError) {
+      console.error('Error assigning coach to team:', assignError);
+      // Rollback team creation
+      await supabase.from('teams').delete().eq('id', team.id);
+      return { data: null, error: assignError.message };
+    }
+
+    // Copy club methodology to the new team
+    const { error: methodologyError } = await copyClubMethodologyToTeam(
+      team.id,
+      clubId,
+      coachId
+    );
+
+    if (methodologyError) {
+      // Log warning but don't fail team creation - methodology can be set up later
+      console.warn('Warning: Failed to copy methodology to team:', methodologyError);
+    }
+
+    return { data: team, error: null };
   } catch (error) {
-    console.error('Unexpected error creating first team:', error);
+    console.error('Unexpected error creating team:', error);
     return { data: null, error: 'Failed to create team' };
   }
 };
 
 /**
- * Combined function to complete onboarding with profile and team creation
+ * Complete onboarding with team creation for v2
  */
-export const completeOnboardingWithTeam = async (
+export const completeOnboardingV2 = async (
   coachId: string,
+  clubId: string,
   profileData: {
     name: string;
     position: string;
     profile_picture?: string;
   },
-  teamData: {
+  teamData?: {
     name: string;
     age_group: string;
     skill_level: string;
@@ -130,10 +168,14 @@ export const completeOnboardingWithTeam = async (
       return { teamData: null, error: profileResult.error };
     }
 
-    // Create first team
-    const teamResult = await createFirstTeam(coachId, teamData);
-    if (teamResult.error) {
-      return { teamData: null, error: teamResult.error };
+    // Create team if data provided
+    let team = null;
+    if (teamData) {
+      const teamResult = await createTeamV2(clubId, coachId, teamData);
+      if (teamResult.error) {
+        return { teamData: null, error: teamResult.error };
+      }
+      team = teamResult.data;
     }
 
     // Mark onboarding as completed
@@ -142,7 +184,7 @@ export const completeOnboardingWithTeam = async (
       return { teamData: null, error: completeResult.error };
     }
 
-    return { teamData: teamResult.data, error: null };
+    return { teamData: team, error: null };
   } catch (error) {
     console.error('Unexpected error completing onboarding:', error);
     return { teamData: null, error: 'Failed to complete onboarding' };

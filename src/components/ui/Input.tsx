@@ -1,7 +1,6 @@
 'use client'
 
 import React from 'react'
-import { motion } from 'framer-motion'
 import { TbSquareRoundedArrowRightFilled } from "react-icons/tb";
 import { theme } from '@/styles/theme'
 
@@ -15,12 +14,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const inputId = React.useId();
 
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-        style={{ position: 'relative', width: '100%' }}
-      >
+      <div style={{ position: 'relative', width: '100%' }}>
         <style>
           {`
             #${inputId}::placeholder {
@@ -89,7 +83,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             color={theme.colors.gold.main}
           />
         </button>
-      </motion.div>
+      </div>
     )
   }
 )

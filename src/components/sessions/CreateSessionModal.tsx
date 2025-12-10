@@ -25,9 +25,16 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   onCancel,
   onCreate,
 }) => {
+  // Get today's date with a default time of 6:00 PM
+  const getDefaultDateTime = () => {
+    const now = new Date();
+    now.setHours(18, 0, 0, 0);
+    return now.toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:MM
+  };
+
   const [formData, setFormData] = useState({
     title: '',
-    session_date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
+    session_date: getDefaultDateTime(),
     player_count: team.player_count,
     duration: team.session_duration,
   });
@@ -148,7 +155,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
               />
             </div>
 
-            {/* Session Date Field */}
+            {/* Session Date & Time Field */}
             <div style={{ marginBottom: theme.spacing.lg }}>
               <label
                 style={{
@@ -161,10 +168,10 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
                   letterSpacing: '0.05em',
                 }}
               >
-                Session Date *
+                Date & Time *
               </label>
               <input
-                type="date"
+                type="datetime-local"
                 value={formData.session_date}
                 onChange={(e) => setFormData({ ...formData, session_date: e.target.value })}
                 required

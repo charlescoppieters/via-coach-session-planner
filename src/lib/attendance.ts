@@ -1,4 +1,6 @@
-import { supabase } from './supabase'
+import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
 import { withSessionRetry } from './session-utils'
 import type { SessionAttendanceInsert, SessionAttendanceUpdate, Player } from '@/types/database'
 

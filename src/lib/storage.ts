@@ -1,4 +1,6 @@
-import { supabase } from './supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 
 const BUCKET_NAME = 'coach-profiles';
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -123,5 +125,53 @@ export const replaceProfilePicture = async (
   } catch (error) {
     console.error('Replace error:', error);
     return { data: null, error: 'Failed to replace image' };
+  }
+};
+
+// ========================================
+// Club Logo Storage
+// ========================================
+
+const CLUB_BUCKET_NAME = 'club-logos';
+
+/**
+ * Uploads a club logo to Supabase Storage
+ * Returns the full public URL on success
+ */
+export const uploadClubLogo = async (
+  file: File,
+  identifier: string
+): Promise<{ data: string | null; error: string | null }> => {
+  try {
+    // Validate file
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      return { data: null, error: validation.error || 'Invalid file' };
+    }
+
+    // Generate unique filename: identifier-timestamp.extension
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${identifier}-${Date.now()}.${fileExt}`;
+    const filePath = `logos/${fileName}`;
+
+    // Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+      .from(CLUB_BUCKET_NAME)
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (error) {
+      console.error('Club logo upload error:', error);
+      return { data: null, error: error.message };
+    }
+
+    // Return the public URL
+    const { data: urlData } = supabase.storage.from(CLUB_BUCKET_NAME).getPublicUrl(data.path);
+    return { data: urlData.publicUrl, error: null };
+  } catch (error) {
+    console.error('Unexpected club logo upload error:', error);
+    return { data: null, error: 'Failed to upload logo. Please try again.' };
   }
 };

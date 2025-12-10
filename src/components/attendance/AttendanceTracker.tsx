@@ -4,7 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { theme } from '@/styles/theme';
 import { getPlayers } from '@/lib/players';
 import { getSessionAttendance, markAttendance, initializeSessionAttendance, updateAttendanceNotes } from '@/lib/attendance';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 import { AttendancePlayerItem } from './AttendancePlayerItem';
 import { NotesModal } from '@/components/common/NotesModal';
 import { CgSpinnerAlt } from 'react-icons/cg';

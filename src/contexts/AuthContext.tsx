@@ -2,17 +2,32 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { User, Session } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
-// Auth utils removed - no longer needed
-import type { Coach } from '@/types/database'
+import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
+import {
+  getCoachClubMembership,
+  createClub as createClubFn,
+} from '@/lib/auth'
+import type { Coach, Club, ClubMembership } from '@/types/database'
 
 interface AuthContextType {
+  // Existing
   user: User | null
   coach: Coach | null
   session: Session | null
   loading: boolean
+
+  // Club
+  club: Club | null
+  clubMembership: ClubMembership | null
+  isAdmin: boolean
+
+  // Methods
   signOut: () => Promise<void>
   refreshAuth: () => Promise<void>
+  createClub: (name: string, logoUrl?: string) => Promise<{ success: boolean; error: string | null }>
+  refreshClubData: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -33,9 +48,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [coach, setCoach] = useState<Coach | null>(null)
   const [session, setSession] = useState<Session | null>(null)
+  const [club, setClub] = useState<Club | null>(null)
+  const [clubMembership, setClubMembership] = useState<ClubMembership | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Computed property for admin status
+  const isAdmin = clubMembership?.role === 'admin'
+
+  const refreshClubData = async () => {
+    if (!coach?.id) return
+
+    try {
+      const { club: clubData, membership } = await getCoachClubMembership(coach.id)
+      setClub(clubData)
+      setClubMembership(membership)
+    } catch (error) {
+      console.error('Error refreshing club data:', error)
+    }
+  }
+
   const refreshAuth = async () => {
+    setLoading(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
 
@@ -52,11 +85,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         if (coachData) {
           setCoach(coachData)
+
+          // Fetch club membership
+          const { club: clubData, membership } = await getCoachClubMembership(coachData.id)
+          setClub(clubData)
+          setClubMembership(membership)
         }
       } else {
         setUser(null)
         setCoach(null)
         setSession(null)
+        setClub(null)
+        setClubMembership(null)
       }
     } catch (error) {
       console.error('Error refreshing auth:', error)
@@ -69,43 +109,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Check active session on mount
     refreshAuth()
 
-    // Listen for auth changes - FIX: Don't include supabase as dependency
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: string, session: Session | null) => {
 
-        // FIX: Handle INITIAL_SESSION differently to prevent hanging
+        // Handle INITIAL_SESSION - let refreshAuth handle the full flow
+        // Don't set loading=false here if we have a session, as refreshAuth will do it
         if (event === 'INITIAL_SESSION') {
           if (session) {
             setSession(session)
             setUser(session.user)
-            // For initial session, use the existing coach from refreshAuth()
-            // Don't refetch to avoid hanging
+            // Don't set loading=false - let refreshAuth complete and set it
           } else {
             setUser(null)
             setCoach(null)
             setSession(null)
+            setClub(null)
+            setClubMembership(null)
+            setLoading(false)
           }
-          setLoading(false)
           return
         }
 
-        // For other events, handle normally - ONLY synchronous operations
+        // For other events, handle normally
         if (session) {
           setSession(session)
           setUser(session.user)
-          // Coach profile will be fetched by separate effect - NO async operations here
         } else {
           setUser(null)
           setCoach(null)
           setSession(null)
+          setClub(null)
+          setClubMembership(null)
         }
 
         setLoading(false)
       }
     )
 
-    // Only refresh on network reconnection, not tab visibility
-    // Tab switching should NOT break auth
+    // Only refresh on network reconnection
     const handleOnline = () => {
       refreshAuth()
     }
@@ -118,15 +160,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [])
 
-  // Separate effect for coach profile fetching - prevents client lockup
+  // Separate effect for coach and club profile fetching
   useEffect(() => {
-    const fetchCoachProfile = async () => {
-      // Only fetch if we have a user but no coach profile
+    const fetchProfiles = async () => {
       if (user && !coach && !loading) {
         try {
-          // Add timeout to prevent hanging
           const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error('Coach profile fetch timeout after 10 seconds')), 10000)
+            setTimeout(() => reject(new Error('Profile fetch timeout after 10 seconds')), 10000)
           })
 
           const fetchPromise = supabase
@@ -139,16 +179,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
           if (coachData) {
             setCoach(coachData)
+
+            // Also fetch club membership
+            const { club: clubData, membership } = await getCoachClubMembership(coachData.id)
+            setClub(clubData)
+            setClubMembership(membership)
           }
         } catch (error) {
-          console.error('Coach profile fetch failed:', error)
-          // Don't block the auth flow - app can work without coach profile
+          console.error('Profile fetch failed:', error)
         }
       }
     }
 
-    // Debounce the fetch to prevent rapid repeated calls
-    const timeoutId = setTimeout(fetchCoachProfile, 500)
+    const timeoutId = setTimeout(fetchProfiles, 500)
     return () => clearTimeout(timeoutId)
   }, [user, coach, loading])
 
@@ -161,6 +204,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null)
       setCoach(null)
       setSession(null)
+      setClub(null)
+      setClubMembership(null)
     } catch (error) {
       console.error('Error signing out:', error)
     } finally {
@@ -168,13 +213,34 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
+  const handleCreateClub = async (name: string, logoUrl?: string): Promise<{ success: boolean; error: string | null }> => {
+    if (!coach?.id) {
+      return { success: false, error: 'Not authenticated' }
+    }
+
+    const { club: newClub, membership, error } = await createClubFn(name, coach.id, logoUrl)
+
+    if (error || !newClub || !membership) {
+      return { success: false, error: error || 'Failed to create club' }
+    }
+
+    setClub(newClub)
+    setClubMembership(membership)
+    return { success: true, error: null }
+  }
+
   const value = {
     user,
     coach,
     session,
     loading,
+    club,
+    clubMembership,
+    isAdmin,
     signOut: handleSignOut,
     refreshAuth,
+    createClub: handleCreateClub,
+    refreshClubData,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -9,16 +9,18 @@ import { PlayerDetail } from './PlayerDetail';
 import { PlayerForm } from './PlayerForm';
 import { getPlayers, createPlayer, updatePlayer } from '@/lib/players';
 import type { Player, Team } from '@/types/database';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 
 interface PlayersViewProps {
-  coachId: string;
+  clubId: string;
   teamId: string;
   team?: Team;
 }
 
 export const PlayersView: React.FC<PlayersViewProps> = ({
-  coachId,
+  clubId,
   teamId,
   team: propTeam,
 }) => {
@@ -49,17 +51,17 @@ export const PlayersView: React.FC<PlayersViewProps> = ({
 
   // Refetch players function
   const refetchPlayers = useCallback(async () => {
-    const { data } = await getPlayers(coachId, teamId);
+    const { data } = await getPlayers(clubId, teamId);
     if (data) {
       setPlayers(data);
     }
-  }, [coachId, teamId]);
+  }, [clubId, teamId]);
 
   // Fetch players on mount and when teamId changes
   useEffect(() => {
     const fetchPlayers = async () => {
       setIsLoading(true);
-      const { data } = await getPlayers(coachId, teamId);
+      const { data } = await getPlayers(clubId, teamId);
       if (data) {
         setPlayers(data);
       }
@@ -67,7 +69,7 @@ export const PlayersView: React.FC<PlayersViewProps> = ({
     };
 
     fetchPlayers();
-  }, [coachId, teamId]);
+  }, [clubId, teamId]);
 
   // Set up real-time subscription for players
   useEffect(() => {
@@ -121,7 +123,7 @@ export const PlayersView: React.FC<PlayersViewProps> = ({
   };
 
   const handleCreatePlayer = async (playerData: {
-    coach_id: string;
+    club_id: string;
     team_id: string;
     name: string;
     age?: number | null;
@@ -229,7 +231,6 @@ export const PlayersView: React.FC<PlayersViewProps> = ({
       ) : isAddingPlayer && team ? (
         <PlayerForm
           team={team}
-          coachId={coachId}
           onCreate={handleCreatePlayer}
           onCancel={handleCancelAdd}
         />

@@ -1,4 +1,6 @@
-import { supabase } from './supabase'
+import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
 
 export async function validateAndRefreshSession() {
   try {

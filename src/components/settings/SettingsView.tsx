@@ -9,16 +9,20 @@ import { CoachDetails } from './CoachDetails';
 import { TeamDetails } from './TeamDetails';
 import { getTeams, createTeam, updateTeam } from '@/lib/teams';
 import type { Team, Coach } from '@/types/database';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 
 interface SettingsViewProps {
   coachId: string;
+  clubId: string;
   coach: Coach | null;
   refreshAuth: () => Promise<void>;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   coachId,
+  clubId,
   coach: propCoach,
   refreshAuth,
 }) => {
@@ -130,7 +134,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     gender: string | null;
   }) => {
     const { data, error } = await createTeam({
-      coach_id: coachId,
+      club_id: clubId,
+      created_by_coach_id: coachId,
       ...teamData,
     });
 

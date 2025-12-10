@@ -1,15 +1,17 @@
-import { supabase } from './supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 import type { Player, PlayerInsert, PlayerUpdate } from '@/types/database';
 
 /**
- * Get all players for a coach, optionally filtered by team
+ * Get all players for a club, optionally filtered by team
  */
-export async function getPlayers(coachId: string, teamId?: string | null) {
+export async function getPlayers(clubId: string, teamId?: string | null) {
   try {
     let query = supabase
       .from('players')
       .select('*')
-      .eq('coach_id', coachId)
+      .eq('club_id', clubId)
       .order('name', { ascending: true });
 
     if (teamId) {
@@ -57,7 +59,7 @@ export async function getPlayer(playerId: string) {
  * Create a new player
  */
 export async function createPlayer(playerData: {
-  coach_id: string;
+  club_id: string;
   team_id: string;
   name: string;
   age?: number | null;
@@ -69,7 +71,7 @@ export async function createPlayer(playerData: {
 }) {
   try {
     const insertData: PlayerInsert = {
-      coach_id: playerData.coach_id,
+      club_id: playerData.club_id,
       team_id: playerData.team_id,
       name: playerData.name,
       age: playerData.age || null,
@@ -167,4 +169,32 @@ export async function deletePlayer(playerId: string) {
     console.error('Error deleting player:', error);
     return { error };
   }
+}
+
+/**
+ * Subscribe to realtime player changes for a team
+ */
+export function subscribeToPlayers(
+  teamId: string,
+  onUpdate: () => void
+) {
+  const channel = supabase
+    .channel(`players-${teamId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'players',
+        filter: `team_id=eq.${teamId}`,
+      },
+      () => {
+        onUpdate();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }

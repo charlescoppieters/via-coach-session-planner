@@ -99,7 +99,9 @@ export const TeamCreationStep: React.FC<TeamCreationStepProps> = ({ onNext, onBa
         Set up your team details to start planning sessions
       </p>
 
-      {/* Team Name */}
+      {/* Form Content - Fixed Height Container */}
+      <div style={{ minHeight: '350px' }}>
+        {/* Team Name */}
       <div style={{ marginBottom: theme.spacing.lg }}>
         <label style={{
           display: 'block',
@@ -385,6 +387,7 @@ export const TeamCreationStep: React.FC<TeamCreationStepProps> = ({ onNext, onBa
           </select>
         </div>
       </div>
+      </div>
 
       {/* Navigation Buttons */}
       <div style={{
@@ -442,7 +445,7 @@ export const TeamCreationStep: React.FC<TeamCreationStepProps> = ({ onNext, onBa
             }
           }}
         >
-          Create Team & Continue
+          Next
         </button>
       </div>
     </div>

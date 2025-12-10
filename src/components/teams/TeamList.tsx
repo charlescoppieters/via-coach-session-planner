@@ -3,13 +3,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CgSpinnerAlt } from "react-icons/cg";
 import { theme } from "@/styles/theme";
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 import { getTeams, createTeam } from '@/lib/teams';
 import type { Team, TeamInsert } from '@/types/database';
 import { TeamCard } from './TeamCard';
 
 interface TeamListProps {
   coachId: string | null;
+  clubId: string | null;
   selectedTeamId: string | null;
   onTeamSelect: (teamId: string) => void;
   triggerNewTeam?: number;
@@ -19,6 +22,7 @@ interface TeamListProps {
 
 export const TeamList: React.FC<TeamListProps> = ({
   coachId,
+  clubId,
   selectedTeamId,
   onTeamSelect,
   triggerNewTeam,
@@ -157,7 +161,7 @@ export const TeamList: React.FC<TeamListProps> = ({
   }, [coachId]);
 
   const handleAddNewTeam = async () => {
-    if (!coachId) return;
+    if (!coachId || !clubId) return;
 
 
     // Prevent double execution
@@ -167,7 +171,8 @@ export const TeamList: React.FC<TeamListProps> = ({
 
     setIsAddingTeam(true);
     const newTeamData: TeamInsert = {
-      coach_id: coachId,
+      club_id: clubId,
+      created_by_coach_id: coachId,
       name: 'New Team',
       age_group: '',
       skill_level: '',
