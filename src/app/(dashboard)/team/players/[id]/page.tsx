@@ -3,27 +3,63 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { FaTrash, FaQuestionCircle, FaEdit } from 'react-icons/fa'
+import { FaEdit } from 'react-icons/fa'
 import { CgSpinnerAlt } from 'react-icons/cg'
 import { theme } from '@/styles/theme'
 import { useAuth } from '@/contexts/AuthContext'
-import { getPlayer, updatePlayer, deletePlayer } from '@/lib/players'
-import { getClubPositionalProfiles, getSystemDefaults, type PositionalProfile, type SystemDefault } from '@/lib/methodology'
+import { getPlayer, updatePlayer, deletePlayer, getPlayerIDPs, updatePlayerIDPs } from '@/lib/players'
+import {
+  getPlayerIDPProgress,
+  getPlayerAttendanceSummary,
+  getPlayerIDPPriorities,
+  getPlayerBlockRecommendations,
+  getPlayerTrainingBalance,
+  getRecentPlayerFeedbackNotes,
+  type PlayerFeedbackNote,
+} from '@/lib/playerAnalytics'
+import type {
+  PlayerIDP,
+  PlayerIDPProgress,
+  PlayerAttendanceSummary,
+  PlayerIDPPriority,
+  PlayerBlockRecommendation,
+  PlayerTrainingBalance,
+} from '@/types/database'
+import {
+  getClubPositionalProfiles,
+  getSystemDefaults,
+  getInPossessionAttributes,
+  getOutOfPossessionAttributes,
+  type PositionalProfile,
+  type SystemDefault,
+} from '@/lib/methodology'
 import type { Player } from '@/types/database'
+import { isPositionalProfileAttributesV2 } from '@/types/database'
+
+// Tab components
+import { PlayerTabs, type PlayerTab } from '@/components/players/PlayerTabs'
+import { PlayerDetailsTab } from '@/components/players/PlayerDetailsTab'
+import { PlayerOverviewTab } from '@/components/players/PlayerOverviewTab'
+import { PlayerDevelopmentTab } from '@/components/players/PlayerDevelopmentTab'
+import { PlayerBalanceTab } from '@/components/players/PlayerBalanceTab'
+import { PlayerFeedbackTab } from '@/components/players/PlayerFeedbackTab'
+import { PlayerSessionsTab } from '@/components/players/PlayerSessionsTab'
 
 interface PositionOption {
   key: string
   name: string
-  attributes: string[]
+  inPossessionAttrs: string[]
+  outOfPossessionAttrs: string[]
 }
-
-const OTHER_OPTION = '__other__'
 
 export default function PlayerDetailPage() {
   const router = useRouter()
   const params = useParams()
   const playerId = params.id as string
   const { isAdmin, club } = useAuth()
+
+  // Tab state - default to overview
+  const [activeTab, setActiveTab] = useState<PlayerTab>('overview')
 
   const [player, setPlayer] = useState<Player | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -34,20 +70,30 @@ export default function PlayerDetailPage() {
 
   // Positions from positional profiles
   const [positions, setPositions] = useState<PositionOption[]>([])
-  // System defaults for attributes (to map keys to display names)
-  const [systemAttributes, setSystemAttributes] = useState<SystemDefault[]>([])
+  // Attributes for IDP selection and display
+  const [inPossessionAttributes, setInPossessionAttributes] = useState<SystemDefault[]>([])
+  const [outOfPossessionAttributes, setOutOfPossessionAttributes] = useState<SystemDefault[]>([])
 
   // Form state
   const [name, setName] = useState('')
   const [position, setPosition] = useState('')
   const [age, setAge] = useState('')
   const [gender, setGender] = useState('')
-  const [target1, setTarget1] = useState('')
-  const [target2, setTarget2] = useState('')
-  const [target3, setTarget3] = useState('')
-  const [customTarget1, setCustomTarget1] = useState('')
-  const [customTarget2, setCustomTarget2] = useState('')
-  const [customTarget3, setCustomTarget3] = useState('')
+
+  // IDP state (using player_idps table)
+  const [playerIDPs, setPlayerIDPs] = useState<PlayerIDP[]>([])
+  const [editedIDPs, setEditedIDPs] = useState<Array<{ attribute_key: string; priority: number }>>([])
+
+  // Analytics state
+  const [idpProgress, setIdpProgress] = useState<PlayerIDPProgress[]>([])
+  const [attendanceSummary, setAttendanceSummary] = useState<PlayerAttendanceSummary | null>(null)
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false)
+
+  // Enhanced analytics state
+  const [idpPriorities, setIdpPriorities] = useState<PlayerIDPPriority[] | null>(null)
+  const [recentFeedback, setRecentFeedback] = useState<PlayerFeedbackNote[] | null>(null)
+  const [blockRecommendations, setBlockRecommendations] = useState<PlayerBlockRecommendation[] | null>(null)
+  const [trainingBalance, setTrainingBalance] = useState<PlayerTrainingBalance[] | null>(null)
 
   // Delete confirmation
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -55,6 +101,15 @@ export default function PlayerDetailPage() {
 
   // IDP info tooltip
   const [showIdpInfo, setShowIdpInfo] = useState(false)
+
+  // Attribute names map for display
+  const attributeNames: Record<string, string> = {}
+  inPossessionAttributes.forEach((attr) => {
+    attributeNames[attr.key] = attr.value?.name || attr.key
+  })
+  outOfPossessionAttributes.forEach((attr) => {
+    attributeNames[attr.key] = attr.value?.name || attr.key
+  })
 
   const fetchPlayer = useCallback(async () => {
     if (!playerId) return
@@ -73,90 +128,120 @@ export default function PlayerDetailPage() {
       setPosition(data.position || '')
       setAge(data.age?.toString() || '')
       setGender(data.gender || '')
-      setTarget1(data.target_1 || '')
-      setTarget2(data.target_2 || '')
-      setTarget3(data.target_3 || '')
+
+      // Fetch IDPs
+      const { data: idpsData } = await getPlayerIDPs(playerId)
+      if (idpsData) {
+        setPlayerIDPs(idpsData)
+        setEditedIDPs(idpsData.map(idp => ({
+          attribute_key: idp.attribute_key,
+          priority: idp.priority
+        })))
+      }
     }
 
     setIsLoading(false)
+  }, [playerId])
+
+  const fetchAnalytics = useCallback(async () => {
+    if (!playerId) return
+
+    setIsLoadingAnalytics(true)
+
+    const [
+      progressResult,
+      attendanceResult,
+      prioritiesResult,
+      feedbackResult,
+      recommendationsResult,
+      balanceResult,
+    ] = await Promise.all([
+      getPlayerIDPProgress(playerId),
+      getPlayerAttendanceSummary(playerId),
+      getPlayerIDPPriorities(playerId),
+      getRecentPlayerFeedbackNotes(playerId, 5), // Get recent 5 for overview
+      getPlayerBlockRecommendations(playerId, 10),
+      getPlayerTrainingBalance(playerId),
+    ])
+
+    if (progressResult.data) {
+      setIdpProgress(progressResult.data)
+    }
+
+    if (attendanceResult.data) {
+      setAttendanceSummary(attendanceResult.data)
+    }
+
+    if (prioritiesResult.data) {
+      setIdpPriorities(prioritiesResult.data)
+    }
+
+    if (feedbackResult.data) {
+      setRecentFeedback(feedbackResult.data)
+    }
+
+    if (recommendationsResult.data) {
+      setBlockRecommendations(recommendationsResult.data)
+    }
+
+    if (balanceResult.data) {
+      setTrainingBalance(balanceResult.data)
+    }
+
+    setIsLoadingAnalytics(false)
   }, [playerId])
 
   useEffect(() => {
     fetchPlayer()
   }, [fetchPlayer])
 
-  // Helper to get attribute display name from key
-  const getAttributeName = (key: string): string => {
-    const attr = systemAttributes.find((a) => a.key === key)
-    return attr?.value?.name || key
-  }
-
-  // Helper to get attribute key from display name (reverse lookup)
-  const getAttributeKey = (displayName: string): string | null => {
-    const attr = systemAttributes.find((a) => a.value?.name === displayName)
-    return attr?.key || null
-  }
-
-  // Get attributes for selected position
-  const selectedPositionAttributes = positions.find(p => p.name === position)?.attributes || []
-
-  // Helper to get final IDP value (handles "Other" option)
-  const getTargetValue = (selected: string, custom: string): string | null => {
-    if (selected === OTHER_OPTION) {
-      return custom.trim() || null
-    }
-    if (!selected) return null
-    return getAttributeName(selected)
-  }
-
-  // Convert stored display names to attribute keys for dropdown selection
-  // Runs when player data and system attributes are both loaded
+  // Fetch analytics when Overview, Development, Balance, or Sessions tab is selected
   useEffect(() => {
-    if (!player || systemAttributes.length === 0) return
-
-    const convertTargetToKey = (targetValue: string | null): { key: string; custom: string } => {
-      if (!targetValue) return { key: '', custom: '' }
-
-      // Try to find the attribute key for this display name
-      const attrKey = getAttributeKey(targetValue)
-      if (attrKey && selectedPositionAttributes.includes(attrKey)) {
-        return { key: attrKey, custom: '' }
-      }
-
-      // If not found in position's attributes, it's a custom value
-      return { key: OTHER_OPTION, custom: targetValue }
+    const needsAnalytics = ['overview', 'development', 'balance', 'sessions'].includes(activeTab)
+    if (needsAnalytics && idpProgress.length === 0) {
+      fetchAnalytics()
     }
+  }, [activeTab, fetchAnalytics, idpProgress.length])
 
-    const t1 = convertTargetToKey(player.target_1)
-    const t2 = convertTargetToKey(player.target_2)
-    const t3 = convertTargetToKey(player.target_3)
+  // IDP management functions
+  const handleAddIDP = (attributeKey: string) => {
+    if (editedIDPs.length >= 3) return
+    if (editedIDPs.find(idp => idp.attribute_key === attributeKey)) return
 
-    setTarget1(t1.key)
-    setCustomTarget1(t1.custom)
-    setTarget2(t2.key)
-    setCustomTarget2(t2.custom)
-    setTarget3(t3.key)
-    setCustomTarget3(t3.custom)
-  }, [player, systemAttributes, selectedPositionAttributes])
+    setEditedIDPs([...editedIDPs, {
+      attribute_key: attributeKey,
+      priority: editedIDPs.length + 1
+    }])
+  }
+
+  const handleRemoveIDP = (attributeKey: string) => {
+    const newIDPs = editedIDPs
+      .filter(idp => idp.attribute_key !== attributeKey)
+      .map((idp, idx) => ({ ...idp, priority: idx + 1 }))
+    setEditedIDPs(newIDPs)
+  }
 
   // Fetch positions from positional profiles
   const fetchPositions = useCallback(async () => {
     if (!club?.id) return
 
     // Get club positional profiles and system defaults in parallel
-    const [profilesRes, positionsRes, attributesRes] = await Promise.all([
+    const [profilesRes, positionsRes, inPossRes, outPossRes] = await Promise.all([
       getClubPositionalProfiles(club.id),
       getSystemDefaults('positions'),
-      getSystemDefaults('attributes'),
+      getInPossessionAttributes(),
+      getOutOfPossessionAttributes(),
     ])
 
     const profiles = profilesRes.data
     const systemPositions = positionsRes.data
-    const sysAttributes = attributesRes.data
 
-    // Store system attributes for display name lookups
-    if (sysAttributes) {
-      setSystemAttributes(sysAttributes)
+    // Store attributes for display name lookups
+    if (inPossRes.data) {
+      setInPossessionAttributes(inPossRes.data)
+    }
+    if (outPossRes.data) {
+      setOutOfPossessionAttributes(outPossRes.data)
     }
 
     if (profiles && systemPositions) {
@@ -169,11 +254,26 @@ export default function PlayerDetailPage() {
       // Map profiles to position options (including attributes)
       const positionOptions: PositionOption[] = profiles
         .filter((profile: PositionalProfile) => profile.is_active)
-        .map((profile: PositionalProfile) => ({
-          key: profile.position_key,
-          name: profile.custom_position_name || positionMap.get(profile.position_key) || profile.position_key,
-          attributes: profile.attributes || [],
-        }))
+        .map((profile: PositionalProfile) => {
+          // Handle v2 attribute structure
+          let inPoss: string[] = []
+          let outPoss: string[] = []
+
+          if (isPositionalProfileAttributesV2(profile.attributes)) {
+            inPoss = profile.attributes.in_possession || []
+            outPoss = profile.attributes.out_of_possession || []
+          } else if (Array.isArray(profile.attributes)) {
+            // Legacy v1: put all in in_possession
+            inPoss = profile.attributes
+          }
+
+          return {
+            key: profile.position_key,
+            name: profile.custom_position_name || positionMap.get(profile.position_key) || profile.position_key,
+            inPossessionAttrs: inPoss,
+            outOfPossessionAttrs: outPoss,
+          }
+        })
 
       setPositions(positionOptions)
     }
@@ -187,22 +287,19 @@ export default function PlayerDetailPage() {
   useEffect(() => {
     if (!player) return
 
-    // Get what would be saved for each target
-    const newTarget1 = getTargetValue(target1, customTarget1)
-    const newTarget2 = getTargetValue(target2, customTarget2)
-    const newTarget3 = getTargetValue(target3, customTarget3)
-
-    const changed =
+    // Compare basic fields
+    const basicFieldsChanged =
       name !== player.name ||
       position !== (player.position || '') ||
       age !== (player.age?.toString() || '') ||
-      gender !== (player.gender || '') ||
-      newTarget1 !== (player.target_1 || null) ||
-      newTarget2 !== (player.target_2 || null) ||
-      newTarget3 !== (player.target_3 || null)
+      gender !== (player.gender || '')
 
-    setHasChanges(changed)
-  }, [player, name, position, age, gender, target1, target2, target3, customTarget1, customTarget2, customTarget3, systemAttributes])
+    // Compare IDPs
+    const idpsChanged = JSON.stringify(editedIDPs.map(i => i.attribute_key).sort()) !==
+      JSON.stringify(playerIDPs.map(i => i.attribute_key).sort())
+
+    setHasChanges(basicFieldsChanged || idpsChanged)
+  }, [player, name, position, age, gender, editedIDPs, playerIDPs])
 
   const handleSave = async () => {
     if (!player || !name.trim()) return
@@ -210,43 +307,40 @@ export default function PlayerDetailPage() {
     setIsSaving(true)
     setError('')
 
+    // Update basic player info
     const { error } = await updatePlayer(player.id, {
       name: name.trim(),
       position: position.trim() || null,
       age: age ? parseInt(age) : null,
       gender: gender.trim() || null,
-      target_1: getTargetValue(target1, customTarget1),
-      target_2: getTargetValue(target2, customTarget2),
-      target_3: getTargetValue(target3, customTarget3),
     })
 
     if (error) {
       setError('Failed to save changes')
       console.error('Error updating player:', error)
     } else {
+      // Update IDPs if changed
+      const idpsChanged = JSON.stringify(editedIDPs.map(i => i.attribute_key).sort()) !==
+        JSON.stringify(playerIDPs.map(i => i.attribute_key).sort())
+
+      if (idpsChanged && editedIDPs.length > 0) {
+        await updatePlayerIDPs(player.id, editedIDPs)
+      }
+
       await fetchPlayer()
+      // Refresh analytics if IDPs changed
+      if (idpsChanged) {
+        setIdpProgress([])
+        setIdpPriorities(null)
+        setRecentFeedback(null)
+        setBlockRecommendations(null)
+        setTrainingBalance(null)
+        fetchAnalytics()
+      }
       setIsEditing(false)
-      // Reset custom targets after save
-      setCustomTarget1('')
-      setCustomTarget2('')
-      setCustomTarget3('')
     }
 
     setIsSaving(false)
-  }
-
-  // Helper to convert a target display name to key/custom for editing
-  const convertTargetToKeyForEdit = (targetValue: string | null): { key: string; custom: string } => {
-    if (!targetValue) return { key: '', custom: '' }
-
-    // Try to find the attribute key for this display name
-    const attrKey = getAttributeKey(targetValue)
-    if (attrKey && selectedPositionAttributes.includes(attrKey)) {
-      return { key: attrKey, custom: '' }
-    }
-
-    // If not found in position's attributes, it's a custom value
-    return { key: OTHER_OPTION, custom: targetValue }
   }
 
   const handleCancelEdit = () => {
@@ -257,17 +351,11 @@ export default function PlayerDetailPage() {
       setAge(player.age?.toString() || '')
       setGender(player.gender || '')
 
-      // Re-convert targets back to keys
-      const t1 = convertTargetToKeyForEdit(player.target_1)
-      const t2 = convertTargetToKeyForEdit(player.target_2)
-      const t3 = convertTargetToKeyForEdit(player.target_3)
-
-      setTarget1(t1.key)
-      setCustomTarget1(t1.custom)
-      setTarget2(t2.key)
-      setCustomTarget2(t2.custom)
-      setTarget3(t3.key)
-      setCustomTarget3(t3.custom)
+      // Reset IDPs to original values
+      setEditedIDPs(playerIDPs.map(idp => ({
+        attribute_key: idp.attribute_key,
+        priority: idp.priority
+      })))
     }
     setIsEditing(false)
     setHasChanges(false)
@@ -340,16 +428,26 @@ export default function PlayerDetailPage() {
   }
 
   return (
-    <div>
-      {/* Header */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Fixed Header Section */}
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: theme.spacing.xl,
+          flexShrink: 0,
+          backgroundColor: theme.colors.background.secondary,
+          paddingTop: theme.spacing.lg,
+          paddingLeft: theme.spacing.xl,
+          paddingRight: theme.spacing.xl,
         }}
       >
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: theme.spacing.lg,
+          }}
+        >
         <div style={{ display: 'flex', alignItems: 'center', gap: theme.spacing.lg }}>
           {/* Avatar */}
           <div
@@ -389,8 +487,8 @@ export default function PlayerDetailPage() {
             </p>
           </div>
         </div>
-        {/* Edit / Save / Cancel Buttons */}
-        {!isEditing ? (
+        {/* Edit / Save / Cancel Buttons - Only show on Details tab */}
+        {activeTab === 'details' && !isEditing ? (
           <button
             onClick={() => setIsEditing(true)}
             style={{
@@ -410,7 +508,7 @@ export default function PlayerDetailPage() {
             <FaEdit size={14} />
             Edit
           </button>
-        ) : (
+        ) : activeTab === 'details' && isEditing ? (
         <div style={{ display: 'flex', gap: theme.spacing.sm }}>
           <button
             onClick={handleCancelEdit}
@@ -466,578 +564,115 @@ export default function PlayerDetailPage() {
             )}
           </button>
         </div>
-        )}
+        ) : null}
       </div>
 
-      {/* Error Message */}
-      {error && (
-        <div
-          style={{
-            padding: theme.spacing.md,
-            backgroundColor: 'rgba(220, 53, 69, 0.1)',
-            border: `1px solid ${theme.colors.status.error}`,
-            borderRadius: theme.borderRadius.md,
-            color: theme.colors.status.error,
-            marginBottom: theme.spacing.lg,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* Player Information Section */}
-      <div style={{ marginBottom: theme.spacing.xl }}>
-        <h2
-          style={{
-            fontSize: theme.typography.fontSize.lg,
-            fontWeight: theme.typography.fontWeight.semibold,
-            color: theme.colors.text.primary,
-            marginBottom: theme.spacing.lg,
-          }}
-        >
-          Player Information
-        </h2>
-
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: theme.spacing.lg,
-          }}
-        >
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.medium,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.sm,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Name *
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={!isEditing}
-              style={{
-                width: '100%',
-                padding: isEditing ? theme.spacing.md : 0,
-                backgroundColor: isEditing ? theme.colors.background.primary : 'transparent',
-                color: theme.colors.text.primary,
-                border: isEditing ? `2px solid ${theme.colors.border.primary}` : 'none',
-                borderRadius: theme.borderRadius.md,
-                fontSize: theme.typography.fontSize.base,
-                outline: 'none',
-                cursor: isEditing ? 'text' : 'default',
-              }}
-              onFocus={(e) => {
-                if (isEditing) e.target.style.borderColor = theme.colors.gold.main
-              }}
-              onBlur={(e) => {
-                if (isEditing) e.target.style.borderColor = theme.colors.border.primary
-              }}
-            />
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.medium,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.sm,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Position
-            </label>
-            {isEditing ? (
-            <select
-              value={position}
-              onChange={(e) => setPosition(e.target.value)}
-              style={{
-                width: '100%',
-                padding: theme.spacing.md,
-                paddingRight: '2.5rem',
-                backgroundColor: theme.colors.background.primary,
-                color: theme.colors.text.primary,
-                border: `2px solid ${theme.colors.border.primary}`,
-                borderRadius: theme.borderRadius.md,
-                fontSize: theme.typography.fontSize.base,
-                outline: 'none',
-                cursor: 'pointer',
-                appearance: 'none',
-                backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 0.7rem center',
-                backgroundSize: '1.2em',
-              }}
-              onFocus={(e) => {
-                e.target.style.borderColor = theme.colors.gold.main
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = theme.colors.border.primary
-              }}
-            >
-              <option value="">Select position...</option>
-              {positions.map((pos) => (
-                <option key={pos.key} value={pos.name}>
-                  {pos.name}
-                </option>
-              ))}
-            </select>
-            ) : (
-              <div style={{ fontSize: theme.typography.fontSize.base, color: theme.colors.text.primary }}>
-                {position || '—'}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.medium,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.sm,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Age
-            </label>
-            <input
-              type="number"
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-              disabled={!isEditing}
-              placeholder="e.g., 14"
-              min="0"
-              max="99"
-              style={{
-                width: '100%',
-                padding: isEditing ? theme.spacing.md : 0,
-                backgroundColor: isEditing ? theme.colors.background.primary : 'transparent',
-                color: theme.colors.text.primary,
-                border: isEditing ? `2px solid ${theme.colors.border.primary}` : 'none',
-                borderRadius: theme.borderRadius.md,
-                fontSize: theme.typography.fontSize.base,
-                outline: 'none',
-                cursor: isEditing ? 'text' : 'default',
-              }}
-              onFocus={(e) => {
-                if (isEditing) e.target.style.borderColor = theme.colors.gold.main
-              }}
-              onBlur={(e) => {
-                if (isEditing) e.target.style.borderColor = theme.colors.border.primary
-              }}
-            />
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.medium,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.sm,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Gender
-            </label>
-            {isEditing ? (
-            <select
-              value={gender}
-              onChange={(e) => setGender(e.target.value)}
-              style={{
-                width: '100%',
-                padding: theme.spacing.md,
-                backgroundColor: theme.colors.background.primary,
-                color: theme.colors.text.primary,
-                border: `2px solid ${theme.colors.border.primary}`,
-                borderRadius: theme.borderRadius.md,
-                fontSize: theme.typography.fontSize.base,
-                outline: 'none',
-                cursor: 'pointer',
-              }}
-              onFocus={(e) => {
-                e.target.style.borderColor = theme.colors.gold.main
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = theme.colors.border.primary
-              }}
-            >
-              <option value="">Not specified</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-            </select>
-            ) : (
-              <div style={{ fontSize: theme.typography.fontSize.base, color: theme.colors.text.primary }}>
-                {gender || '—'}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* IDP Section */}
-      <div style={{ marginBottom: theme.spacing.xl }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
-            marginBottom: theme.spacing.lg,
-          }}
-        >
-          <h2
-            style={{
-              fontSize: theme.typography.fontSize.lg,
-              fontWeight: theme.typography.fontWeight.semibold,
-              color: theme.colors.text.primary,
-            }}
-          >
-            Individual Development Plan (IDP)
-          </h2>
+        {/* Error Message */}
+        {error && (
           <div
-            style={{ position: 'relative' }}
-            onMouseEnter={() => setShowIdpInfo(true)}
-            onMouseLeave={() => setShowIdpInfo(false)}
-          >
-            <div
-              style={{
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'help',
-                color: theme.colors.text.muted,
-                padding: '4px',
-                display: 'flex',
-                alignItems: 'center',
-                opacity: 0.5,
-              }}
-            >
-              <FaQuestionCircle size={16} />
-            </div>
-            {showIdpInfo && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  backgroundColor: theme.colors.background.primary,
-                  border: `1px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  padding: theme.spacing.md,
-                  width: '280px',
-                  zIndex: 10,
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-                }}
-              >
-                <p
-                  style={{
-                    fontSize: theme.typography.fontSize.sm,
-                    color: theme.colors.text.secondary,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  IDP targets are development focus areas for this player. These come from attributes defined in your Positional Profiling within Team Methodology. You can set up to 3 targets per player.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {isEditing && (
-        <p
-          style={{
-            fontSize: theme.typography.fontSize.sm,
-            color: theme.colors.text.secondary,
-            marginBottom: theme.spacing.lg,
-          }}
-        >
-          Set up to 3 development targets for this player
-        </p>
-        )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.md }}>
-          {/* Target 1 */}
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.medium,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.sm,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Target 1
-            </label>
-            {isEditing ? (
-              <>
-                <select
-                  value={target1}
-                  onChange={(e) => {
-                    setTarget1(e.target.value)
-                    if (e.target.value !== OTHER_OPTION) setCustomTarget1('')
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: theme.spacing.md,
-                    paddingRight: '2.5rem',
-                    backgroundColor: theme.colors.background.primary,
-                    color: theme.colors.text.primary,
-                    border: `2px solid ${theme.colors.border.primary}`,
-                    borderRadius: theme.borderRadius.md,
-                    fontSize: theme.typography.fontSize.base,
-                    outline: 'none',
-                    cursor: 'pointer',
-                    appearance: 'none',
-                    backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.7rem center',
-                    backgroundSize: '1.2em',
-                  }}
-                  onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                  onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                >
-                  <option value="">Select target...</option>
-                  {selectedPositionAttributes.map((attr) => (
-                    <option key={attr} value={attr}>{getAttributeName(attr)}</option>
-                  ))}
-                  <option value={OTHER_OPTION}>Other (custom)</option>
-                </select>
-                {target1 === OTHER_OPTION && (
-                  <input
-                    type="text"
-                    value={customTarget1}
-                    onChange={(e) => setCustomTarget1(e.target.value)}
-                    placeholder="Enter custom target..."
-                    style={{
-                      width: '100%',
-                      padding: theme.spacing.md,
-                      marginTop: theme.spacing.sm,
-                      backgroundColor: theme.colors.background.primary,
-                      color: theme.colors.text.primary,
-                      border: `2px solid ${theme.colors.border.primary}`,
-                      borderRadius: theme.borderRadius.md,
-                      fontSize: theme.typography.fontSize.base,
-                      outline: 'none',
-                    }}
-                    onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                    onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                  />
-                )}
-              </>
-            ) : (
-              <div style={{ fontSize: theme.typography.fontSize.base, color: theme.colors.text.primary }}>
-                {player?.target_1 || '—'}
-              </div>
-            )}
-          </div>
-
-          {/* Target 2 */}
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.medium,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.sm,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Target 2
-            </label>
-            {isEditing ? (
-              <>
-                <select
-                  value={target2}
-                  onChange={(e) => {
-                    setTarget2(e.target.value)
-                    if (e.target.value !== OTHER_OPTION) setCustomTarget2('')
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: theme.spacing.md,
-                    paddingRight: '2.5rem',
-                    backgroundColor: theme.colors.background.primary,
-                    color: theme.colors.text.primary,
-                    border: `2px solid ${theme.colors.border.primary}`,
-                    borderRadius: theme.borderRadius.md,
-                    fontSize: theme.typography.fontSize.base,
-                    outline: 'none',
-                    cursor: 'pointer',
-                    appearance: 'none',
-                    backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.7rem center',
-                    backgroundSize: '1.2em',
-                  }}
-                  onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                  onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                >
-                  <option value="">Select target...</option>
-                  {selectedPositionAttributes.map((attr) => (
-                    <option key={attr} value={attr}>{getAttributeName(attr)}</option>
-                  ))}
-                  <option value={OTHER_OPTION}>Other (custom)</option>
-                </select>
-                {target2 === OTHER_OPTION && (
-                  <input
-                    type="text"
-                    value={customTarget2}
-                    onChange={(e) => setCustomTarget2(e.target.value)}
-                    placeholder="Enter custom target..."
-                    style={{
-                      width: '100%',
-                      padding: theme.spacing.md,
-                      marginTop: theme.spacing.sm,
-                      backgroundColor: theme.colors.background.primary,
-                      color: theme.colors.text.primary,
-                      border: `2px solid ${theme.colors.border.primary}`,
-                      borderRadius: theme.borderRadius.md,
-                      fontSize: theme.typography.fontSize.base,
-                      outline: 'none',
-                    }}
-                    onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                    onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                  />
-                )}
-              </>
-            ) : (
-              <div style={{ fontSize: theme.typography.fontSize.base, color: theme.colors.text.primary }}>
-                {player?.target_2 || '—'}
-              </div>
-            )}
-          </div>
-
-          {/* Target 3 */}
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.medium,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.sm,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Target 3
-            </label>
-            {isEditing ? (
-              <>
-                <select
-                  value={target3}
-                  onChange={(e) => {
-                    setTarget3(e.target.value)
-                    if (e.target.value !== OTHER_OPTION) setCustomTarget3('')
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: theme.spacing.md,
-                    paddingRight: '2.5rem',
-                    backgroundColor: theme.colors.background.primary,
-                    color: theme.colors.text.primary,
-                    border: `2px solid ${theme.colors.border.primary}`,
-                    borderRadius: theme.borderRadius.md,
-                    fontSize: theme.typography.fontSize.base,
-                    outline: 'none',
-                    cursor: 'pointer',
-                    appearance: 'none',
-                    backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.7rem center',
-                    backgroundSize: '1.2em',
-                  }}
-                  onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                  onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                >
-                  <option value="">Select target...</option>
-                  {selectedPositionAttributes.map((attr) => (
-                    <option key={attr} value={attr}>{getAttributeName(attr)}</option>
-                  ))}
-                  <option value={OTHER_OPTION}>Other (custom)</option>
-                </select>
-                {target3 === OTHER_OPTION && (
-                  <input
-                    type="text"
-                    value={customTarget3}
-                    onChange={(e) => setCustomTarget3(e.target.value)}
-                    placeholder="Enter custom target..."
-                    style={{
-                      width: '100%',
-                      padding: theme.spacing.md,
-                      marginTop: theme.spacing.sm,
-                      backgroundColor: theme.colors.background.primary,
-                      color: theme.colors.text.primary,
-                      border: `2px solid ${theme.colors.border.primary}`,
-                      borderRadius: theme.borderRadius.md,
-                      fontSize: theme.typography.fontSize.base,
-                      outline: 'none',
-                    }}
-                    onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                    onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                  />
-                )}
-              </>
-            ) : (
-              <div style={{ fontSize: theme.typography.fontSize.base, color: theme.colors.text.primary }}>
-                {player?.target_3 || '—'}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Delete Button - Only show when editing and head coach */}
-      {isEditing && isAdmin && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            paddingTop: theme.spacing.xl,
-            marginTop: theme.spacing.lg,
-            borderTop: `1px solid ${theme.colors.border.primary}`,
-          }}
-        >
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
             style={{
-              padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
-              backgroundColor: 'transparent',
-              color: theme.colors.status.error,
+              padding: theme.spacing.md,
+              backgroundColor: 'rgba(220, 53, 69, 0.1)',
               border: `1px solid ${theme.colors.status.error}`,
               borderRadius: theme.borderRadius.md,
-              fontSize: theme.typography.fontSize.sm,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: theme.spacing.sm,
+              color: theme.colors.status.error,
+              marginBottom: theme.spacing.md,
             }}
           >
-            <FaTrash size={14} />
-            Delete Player
-          </button>
-        </div>
-      )}
+            {error}
+          </div>
+        )}
+
+        {/* Tabs */}
+        <PlayerTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      </div>
+
+      {/* Scrollable Tab Content */}
+      <div
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: theme.spacing.xl,
+        }}
+      >
+        {activeTab === 'details' && (
+          <PlayerDetailsTab
+            player={player}
+            isEditing={isEditing}
+            isSaving={isSaving}
+            hasChanges={hasChanges}
+            isAdmin={isAdmin}
+            name={name}
+            position={position}
+            age={age}
+            gender={gender}
+            playerIDPs={playerIDPs}
+            editedIDPs={editedIDPs}
+            positions={positions}
+            inPossessionAttributes={inPossessionAttributes.map(attr => ({
+              key: attr.key,
+              value: { name: attr.value?.name || attr.key }
+            }))}
+            outOfPossessionAttributes={outOfPossessionAttributes.map(attr => ({
+              key: attr.key,
+              value: { name: attr.value?.name || attr.key }
+            }))}
+            onNameChange={setName}
+            onPositionChange={setPosition}
+            onAgeChange={setAge}
+            onGenderChange={setGender}
+            onAddIDP={handleAddIDP}
+            onRemoveIDP={handleRemoveIDP}
+            onDeleteClick={() => setShowDeleteConfirm(true)}
+            showIdpInfo={showIdpInfo}
+            onIdpInfoEnter={() => setShowIdpInfo(true)}
+            onIdpInfoLeave={() => setShowIdpInfo(false)}
+          />
+        )}
+
+        {activeTab === 'overview' && (
+          <PlayerOverviewTab
+            attendanceSummary={attendanceSummary}
+            idpPriorities={idpPriorities}
+            blockRecommendations={blockRecommendations}
+            recentFeedback={recentFeedback}
+            attributeNames={attributeNames}
+            isLoading={isLoadingAnalytics}
+          />
+        )}
+
+        {activeTab === 'development' && (
+          <PlayerDevelopmentTab
+            idpProgress={idpProgress}
+            attributeNames={attributeNames}
+            isLoading={isLoadingAnalytics}
+            playerId={playerId}
+            idpPriorities={idpPriorities}
+          />
+        )}
+
+        {activeTab === 'balance' && (
+          <PlayerBalanceTab
+            trainingBalance={trainingBalance}
+            isLoading={isLoadingAnalytics}
+          />
+        )}
+
+        {activeTab === 'feedback' && (
+          <PlayerFeedbackTab
+            playerId={playerId}
+            attributeNames={attributeNames}
+          />
+        )}
+
+        {activeTab === 'sessions' && (
+          <PlayerSessionsTab
+            playerId={playerId}
+            attendanceSummary={attendanceSummary}
+            attributeNames={attributeNames}
+          />
+        )}
+      </div>
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (

@@ -61,13 +61,14 @@ ${teamRules.map((rule: { content: string }) => `- ${rule.content}`).join('\n')}`
         age: number | null;
         position: string | null;
         gender: string | null;
-        target_1: string | null;
-        target_2: string | null;
-        target_3: string | null;
+        idps?: Array<{ attribute_key: string; priority: number; notes: string | null }>;
       }) => {
-        const targets = [player.target_1, player.target_2, player.target_3]
-          .filter(Boolean)
-          .map((t, i) => `  Target ${i + 1}: ${t}`)
+        const idpList = (player.idps || [])
+          .sort((a, b) => a.priority - b.priority)
+          .map((idp, i) => {
+            const note = idp.notes ? ` (${idp.notes})` : '';
+            return `  Target ${i + 1}: ${idp.attribute_key}${note}`;
+          })
           .join('\n');
 
         const playerInfo = [];
@@ -75,7 +76,7 @@ ${teamRules.map((rule: { content: string }) => `- ${rule.content}`).join('\n')}`
         if (player.age) playerInfo.push(`Age ${player.age}`);
         if (player.position) playerInfo.push(player.position);
 
-        return `- ${playerInfo.join(', ')}\n${targets || '  (No development targets set)'}`;
+        return `- ${playerInfo.join(', ')}\n${idpList || '  (No development targets set)'}`;
       }).join('\n\n');
 
       contextSections.push(`PLAYER INDIVIDUAL DEVELOPMENT PLANS (IDPs):

@@ -1,11 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { FiX, FiPlus, FiSearch } from 'react-icons/fi';
+import { FiX, FiPlus, FiSearch, FiZap, FiGrid } from 'react-icons/fi';
 import { CgSpinnerAlt } from 'react-icons/cg';
 import { theme } from '@/styles/theme';
 import { type SessionBlock, getBlocksForPicker } from '@/lib/sessionBlocks';
 import { BlockPickerItem } from './BlockPickerItem';
+import { RecommendedBlocksTab } from './RecommendedBlocksTab';
+
+type PickerTab = 'recommended' | 'browse';
 
 interface BlockPickerModalProps {
   onSelectBlock: (block: SessionBlock) => void;
@@ -13,6 +16,8 @@ interface BlockPickerModalProps {
   onCancel: () => void;
   coachId: string;
   clubId: string | null;
+  teamId?: string | null;
+  excludeBlockIds?: string[];
 }
 
 interface BlockCategory {
@@ -27,7 +32,10 @@ export const BlockPickerModal: React.FC<BlockPickerModalProps> = ({
   onCancel,
   coachId,
   clubId,
+  teamId,
+  excludeBlockIds = [],
 }) => {
+  const [activeTab, setActiveTab] = useState<PickerTab>(teamId ? 'recommended' : 'browse');
   const [isLoading, setIsLoading] = useState(true);
   const [myBlocks, setMyBlocks] = useState<SessionBlock[]>([]);
   const [clubBlocks, setClubBlocks] = useState<SessionBlock[]>([]);
@@ -62,15 +70,22 @@ export const BlockPickerModal: React.FC<BlockPickerModalProps> = ({
     loadBlocks();
   }, [coachId, clubId]);
 
-  // Filter blocks by search query
+  // Filter blocks by search query and exclude already-assigned blocks
   const filterBlocks = (blocks: SessionBlock[]): SessionBlock[] => {
-    if (!searchQuery.trim()) return blocks;
-    const query = searchQuery.toLowerCase();
-    return blocks.filter(
-      (block) =>
-        block.title.toLowerCase().includes(query) ||
-        (block.description && block.description.toLowerCase().includes(query))
-    );
+    // First exclude already-assigned blocks
+    let filtered = blocks.filter((block) => !excludeBlockIds.includes(block.id));
+
+    // Then filter by search query if present
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (block) =>
+          block.title.toLowerCase().includes(query) ||
+          (block.description && block.description.toLowerCase().includes(query))
+      );
+    }
+
+    return filtered;
   };
 
   const categories: BlockCategory[] = useMemo(() => [
@@ -89,7 +104,8 @@ export const BlockPickerModal: React.FC<BlockPickerModalProps> = ({
       blocks: filterBlocks(defaultBlocks),
       emptyMessage: searchQuery ? 'No blocks match your search' : 'More default blocks coming soon',
     },
-  ], [myBlocks, clubBlocks, defaultBlocks, searchQuery]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [myBlocks, clubBlocks, defaultBlocks, searchQuery, excludeBlockIds]);
 
   return (
     <>
@@ -201,166 +217,243 @@ export const BlockPickerModal: React.FC<BlockPickerModalProps> = ({
               Create Training Block
             </button>
 
-            {/* Search Input */}
-            <div
-              style={{
-                marginBottom: theme.spacing.lg,
-                position: 'relative',
-              }}
-            >
-              <FiSearch
-                size={18}
-                style={{
-                  position: 'absolute',
-                  left: theme.spacing.md,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: theme.colors.text.muted,
-                }}
-              />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search blocks..."
-                style={{
-                  width: '100%',
-                  padding: theme.spacing.md,
-                  paddingLeft: '44px',
-                  fontSize: theme.typography.fontSize.base,
-                  color: theme.colors.text.primary,
-                  backgroundColor: theme.colors.background.primary,
-                  border: `1px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = theme.colors.gold.main;
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = theme.colors.border.primary;
-                }}
-              />
-            </div>
-
-            {/* Loading State */}
-            {isLoading ? (
+            {/* Tab Bar */}
+            {teamId && (
               <div
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: theme.spacing.xl,
-                  color: theme.colors.text.muted,
+                  gap: theme.spacing.xs,
+                  marginBottom: theme.spacing.md,
+                  backgroundColor: theme.colors.background.primary,
+                  padding: theme.spacing.xs,
+                  borderRadius: theme.borderRadius.md,
                 }}
               >
-                <CgSpinnerAlt
+                <button
+                  onClick={() => setActiveTab('recommended')}
                   style={{
-                    animation: 'spin 1s linear infinite',
-                    fontSize: '24px',
-                    marginRight: theme.spacing.sm,
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: theme.spacing.sm,
+                    padding: theme.spacing.sm,
+                    backgroundColor: activeTab === 'recommended' ? theme.colors.background.tertiary : 'transparent',
+                    color: activeTab === 'recommended' ? theme.colors.text.primary : theme.colors.text.secondary,
+                    border: 'none',
+                    borderRadius: theme.borderRadius.sm,
+                    fontSize: theme.typography.fontSize.sm,
+                    fontWeight: activeTab === 'recommended' ? theme.typography.fontWeight.semibold : theme.typography.fontWeight.normal,
+                    cursor: 'pointer',
+                    transition: theme.transitions.fast,
                   }}
-                />
-                Loading blocks...
+                >
+                  <FiZap size={16} style={{ color: activeTab === 'recommended' ? theme.colors.gold.main : 'inherit' }} />
+                  Recommended
+                </button>
+                <button
+                  onClick={() => setActiveTab('browse')}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: theme.spacing.sm,
+                    padding: theme.spacing.sm,
+                    backgroundColor: activeTab === 'browse' ? theme.colors.background.tertiary : 'transparent',
+                    color: activeTab === 'browse' ? theme.colors.text.primary : theme.colors.text.secondary,
+                    border: 'none',
+                    borderRadius: theme.borderRadius.sm,
+                    fontSize: theme.typography.fontSize.sm,
+                    fontWeight: activeTab === 'browse' ? theme.typography.fontWeight.semibold : theme.typography.fontWeight.normal,
+                    cursor: 'pointer',
+                    transition: theme.transitions.fast,
+                  }}
+                >
+                  <FiGrid size={16} />
+                  Browse All
+                </button>
               </div>
-            ) : (
-              /* Three Column Layout */
+            )}
+
+            {/* Search Input - Only show in browse tab */}
+            {(activeTab === 'browse' || !teamId) && (
               <div
                 style={{
-                  flex: 1,
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: theme.spacing.lg,
-                  minHeight: 0,
+                  marginBottom: theme.spacing.lg,
+                  position: 'relative',
                 }}
               >
-                {categories.map((category) => (
+                <FiSearch
+                  size={18}
+                  style={{
+                    position: 'absolute',
+                    left: theme.spacing.md,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: theme.colors.text.muted,
+                  }}
+                />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search blocks..."
+                  style={{
+                    width: '100%',
+                    padding: theme.spacing.md,
+                    paddingLeft: '44px',
+                    fontSize: theme.typography.fontSize.base,
+                    color: theme.colors.text.primary,
+                    backgroundColor: theme.colors.background.primary,
+                    border: `1px solid ${theme.colors.border.primary}`,
+                    borderRadius: theme.borderRadius.md,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = theme.colors.gold.main;
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = theme.colors.border.primary;
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Recommended Tab Content */}
+            {activeTab === 'recommended' && teamId && (
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                <RecommendedBlocksTab
+                  teamId={teamId}
+                  onSelectBlock={onSelectBlock}
+                  excludeBlockIds={excludeBlockIds}
+                />
+              </div>
+            )}
+
+            {/* Browse Tab Content */}
+            {(activeTab === 'browse' || !teamId) && (
+              <>
+                {/* Loading State */}
+                {isLoading ? (
                   <div
-                    key={category.title}
                     style={{
                       display: 'flex',
-                      flexDirection: 'column',
-                      minHeight: 0,
-                      backgroundColor: theme.colors.background.primary,
-                      borderRadius: theme.borderRadius.md,
-                      overflow: 'hidden',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: theme.spacing.xl,
+                      color: theme.colors.text.muted,
                     }}
                   >
-                    {/* Column Header */}
-                    <div
+                    <CgSpinnerAlt
                       style={{
-                        padding: theme.spacing.md,
-                        borderBottom: `1px solid ${theme.colors.border.primary}`,
-                        backgroundColor: theme.colors.background.tertiary,
+                        animation: 'spin 1s linear infinite',
+                        fontSize: '24px',
+                        marginRight: theme.spacing.sm,
                       }}
-                    >
-                      <h3
+                    />
+                    Loading blocks...
+                  </div>
+                ) : (
+                  /* Three Column Layout */
+                  <div
+                    style={{
+                      flex: 1,
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: theme.spacing.lg,
+                      minHeight: 0,
+                    }}
+                  >
+                    {categories.map((category) => (
+                      <div
+                        key={category.title}
                         style={{
-                          fontSize: theme.typography.fontSize.sm,
-                          fontWeight: theme.typography.fontWeight.semibold,
-                          color: theme.colors.text.secondary,
-                          margin: 0,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          minHeight: 0,
+                          backgroundColor: theme.colors.background.primary,
+                          borderRadius: theme.borderRadius.md,
+                          overflow: 'hidden',
                         }}
                       >
-                        {category.title}
-                        {category.blocks.length > 0 && (
-                          <span
-                            style={{
-                              marginLeft: theme.spacing.sm,
-                              color: theme.colors.text.muted,
-                              fontWeight: theme.typography.fontWeight.normal,
-                            }}
-                          >
-                            ({category.blocks.length})
-                          </span>
-                        )}
-                      </h3>
-                    </div>
-
-                    {/* Scrollable Block List */}
-                    <div
-                      style={{
-                        flex: 1,
-                        overflowY: 'auto',
-                        padding: theme.spacing.md,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: theme.spacing.sm,
-                      }}
-                    >
-                      {category.blocks.length > 0 ? (
-                        category.blocks.map((block) => (
-                          <BlockPickerItem
-                            key={block.id}
-                            block={block}
-                            onClick={() => onSelectBlock(block)}
-                          />
-                        ))
-                      ) : (
+                        {/* Column Header */}
                         <div
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            height: '100%',
-                            minHeight: '120px',
-                            textAlign: 'center',
-                            color: theme.colors.text.muted,
-                            fontSize: theme.typography.fontSize.sm,
-                            fontStyle: 'italic',
                             padding: theme.spacing.md,
+                            borderBottom: `1px solid ${theme.colors.border.primary}`,
+                            backgroundColor: theme.colors.background.tertiary,
                           }}
                         >
-                          {category.emptyMessage}
+                          <h3
+                            style={{
+                              fontSize: theme.typography.fontSize.sm,
+                              fontWeight: theme.typography.fontWeight.semibold,
+                              color: theme.colors.text.secondary,
+                              margin: 0,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.05em',
+                            }}
+                          >
+                            {category.title}
+                            {category.blocks.length > 0 && (
+                              <span
+                                style={{
+                                  marginLeft: theme.spacing.sm,
+                                  color: theme.colors.text.muted,
+                                  fontWeight: theme.typography.fontWeight.normal,
+                                }}
+                              >
+                                ({category.blocks.length})
+                              </span>
+                            )}
+                          </h3>
                         </div>
-                      )}
-                    </div>
+
+                        {/* Scrollable Block List */}
+                        <div
+                          style={{
+                            flex: 1,
+                            overflowY: 'auto',
+                            padding: theme.spacing.md,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: theme.spacing.sm,
+                          }}
+                        >
+                          {category.blocks.length > 0 ? (
+                            category.blocks.map((block) => (
+                              <BlockPickerItem
+                                key={block.id}
+                                block={block}
+                                onClick={() => onSelectBlock(block)}
+                              />
+                            ))
+                          ) : (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                height: '100%',
+                                minHeight: '120px',
+                                textAlign: 'center',
+                                color: theme.colors.text.muted,
+                                fontSize: theme.typography.fontSize.sm,
+                                fontStyle: 'italic',
+                                padding: theme.spacing.md,
+                              }}
+                            >
+                              {category.emptyMessage}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </div>
         </div>

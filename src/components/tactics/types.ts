@@ -2,7 +2,7 @@
 
 export type ToolType = 'select' | 'player' | 'cone' | 'arrow' | 'line';
 
-export type TeamType = 'home' | 'away';
+export type PitchView = 'full' | 'attacking' | 'defending' | 'blank';
 
 export interface PlayerElement {
   type: 'player';
@@ -10,7 +10,7 @@ export interface PlayerElement {
   x: number;
   y: number;
   number: number;
-  team: TeamType;
+  color: string;
 }
 
 export interface ConeElement {
@@ -26,6 +26,7 @@ export interface ArrowElement {
   id: string;
   points: [number, number, number, number]; // [x1, y1, x2, y2]
   dashed: boolean;
+  color: string;
 }
 
 export interface LineElement {
@@ -33,6 +34,7 @@ export interface LineElement {
   id: string;
   points: [number, number, number, number]; // [x1, y1, x2, y2]
   dashed: boolean;
+  color: string;
 }
 
 export type TacticsElement = PlayerElement | ConeElement | ArrowElement | LineElement;
@@ -63,18 +65,3 @@ export const LINE_STROKE_WIDTH = 3;
 export const ARROW_POINTER_LENGTH = 12;
 export const ARROW_POINTER_WIDTH = 10;
 
-// Colors for elements
-export const TEAM_COLORS = {
-  home: '#3B82F6', // Blue
-  away: '#EF4444', // Red
-} as const;
-
-export const CONE_COLORS = {
-  orange: '#F97316',
-  yellow: '#EAB308',
-  blue: '#3B82F6',
-  red: '#EF4444',
-  white: '#FFFFFF',
-} as const;
-
-export const DEFAULT_CONE_COLOR = CONE_COLORS.orange;

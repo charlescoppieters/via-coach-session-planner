@@ -13,6 +13,7 @@ export interface SessionBlock {
   image_url: string | null;
   diagram_data: TacticsElement[] | null;
   duration: number | null;
+  ball_rolling: number | null;
   creator_id: string;
   club_id: string | null;
   is_public: boolean;
@@ -50,6 +51,16 @@ export interface SectionBlock {
   section_subtitle?: string | null;
 }
 
+// Block attribute type for tagging blocks with training attributes
+export interface BlockAttribute {
+  id?: string;
+  block_id?: string;
+  attribute_key: string;
+  relevance: number;
+  order_type: 'first' | 'second';
+  source: 'coach' | 'llm' | 'system';
+}
+
 // Input types
 export type CreateBlockInput = {
   title: string;
@@ -58,6 +69,7 @@ export type CreateBlockInput = {
   image_url?: string | null;
   diagram_data?: TacticsElement[] | null;
   duration?: number | null;
+  ball_rolling?: number | null;
   creator_id: string;
   club_id?: string | null;
   is_public?: boolean;
@@ -81,6 +93,7 @@ export async function createBlock(input: CreateBlockInput) {
       image_url: input.image_url || null,
       diagram_data: input.diagram_data || null,
       duration: input.duration || null,
+      ball_rolling: input.ball_rolling || null,
       creator_id: input.creator_id,
       club_id: input.club_id || null,
       is_public: input.is_public ?? false,
@@ -147,6 +160,7 @@ export async function getSessionBlocks(sessionId: string) {
         image_url,
         diagram_data,
         duration,
+        ball_rolling,
         creator_id,
         club_id,
         is_public,
@@ -291,6 +305,7 @@ export async function editBlockWithCopyOnWrite(
     image_url: updates.image_url !== undefined ? updates.image_url : block.image_url,
     diagram_data: updates.diagram_data !== undefined ? updates.diagram_data : block.diagram_data,
     duration: updates.duration !== undefined ? updates.duration : block.duration,
+    ball_rolling: updates.ball_rolling !== undefined ? updates.ball_rolling : block.ball_rolling,
     creator_id: currentCoachId,
     club_id: updates.club_id !== undefined ? updates.club_id : block.club_id,
     is_public: false, // New copy is private by default
@@ -383,4 +398,64 @@ export async function uploadBlockImage(file: File, blockId: string) {
     .getPublicUrl(filePath);
 
   return { url: publicUrl, error: null };
+}
+
+// ============================================
+// BLOCK ATTRIBUTE OPERATIONS
+// ============================================
+
+// Get all attributes for a block
+export async function getBlockAttributes(blockId: string) {
+  const { data, error } = await supabase
+    .from('session_block_attributes')
+    .select('*')
+    .eq('block_id', blockId)
+    .order('order_type', { ascending: true })
+    .order('relevance', { ascending: false });
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  return { data: data as BlockAttribute[], error: null };
+}
+
+// Save block attributes (delete existing and insert new)
+export async function saveBlockAttributes(
+  blockId: string,
+  attributes: Omit<BlockAttribute, 'id' | 'block_id'>[]
+) {
+  // First, delete all existing attributes for this block
+  const { error: deleteError } = await supabase
+    .from('session_block_attributes')
+    .delete()
+    .eq('block_id', blockId);
+
+  if (deleteError) {
+    return { success: false, error: deleteError };
+  }
+
+  // If no new attributes, we're done
+  if (attributes.length === 0) {
+    return { success: true, error: null };
+  }
+
+  // Insert new attributes
+  const attributesToInsert = attributes.map((attr) => ({
+    block_id: blockId,
+    attribute_key: attr.attribute_key,
+    relevance: attr.relevance,
+    order_type: attr.order_type,
+    source: attr.source,
+  }));
+
+  const { error: insertError } = await supabase
+    .from('session_block_attributes')
+    .insert(attributesToInsert);
+
+  if (insertError) {
+    return { success: false, error: insertError };
+  }
+
+  return { success: true, error: null };
 }

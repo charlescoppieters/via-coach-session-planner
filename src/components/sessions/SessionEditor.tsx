@@ -834,6 +834,7 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
           sessionId={sessionId}
           coachId={coachId}
           clubId={session?.club_id || null}
+          teamId={session?.team_id || null}
           readOnly={false}
           onBlocksChange={handleBlocksChange}
         />

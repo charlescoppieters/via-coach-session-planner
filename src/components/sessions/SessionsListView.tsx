@@ -4,7 +4,7 @@ import { GiSoccerBall } from 'react-icons/gi';
 import { theme } from '@/styles/theme';
 import { SessionCard } from './SessionCard';
 import { CreateSessionModal } from './CreateSessionModal';
-import { CommentModal } from './CommentModal';
+import { SessionFeedbackModal } from './SessionFeedbackModal';
 import { getSessions, createSession, deleteSession } from '@/lib/sessions';
 import type { Session, Team } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
@@ -165,33 +165,10 @@ export const SessionsListView: React.FC<SessionsListViewProps> = ({
     }
   };
 
-  const handleSaveNotes = async (notes: string) => {
-    if (!commentingSession) return;
-
-    try {
-      const { error } = await supabase
-        .from('sessions')
-        .update({ notes })
-        .eq('id', commentingSession.id);
-
-      if (error) throw error;
-
-      // Update local state
-      setSessions(prev =>
-        prev.map(session =>
-          session.id === commentingSession.id
-            ? { ...session, notes }
-            : session
-        )
-      );
-
-      // Close modal
-      setCommentModalOpen(false);
-      setCommentingSession(null);
-    } catch (error) {
-      console.error('Error saving notes:', error);
-      throw error;
-    }
+  const handleFeedbackSaved = () => {
+    // Close modal
+    setCommentModalOpen(false);
+    setCommentingSession(null);
   };
 
   return (
@@ -414,16 +391,19 @@ export const SessionsListView: React.FC<SessionsListViewProps> = ({
         />
       )}
 
-      {/* Comment Modal */}
+      {/* Session Feedback Modal */}
       {commentModalOpen && commentingSession && (
-        <CommentModal
+        <SessionFeedbackModal
+          sessionId={commentingSession.id}
           sessionTitle={commentingSession.title}
-          initialNotes={commentingSession.notes}
+          teamId={team.id}
+          coachId={coachId}
+          clubId={team.club_id}
           onCancel={() => {
             setCommentModalOpen(false);
             setCommentingSession(null);
           }}
-          onSave={handleSaveNotes}
+          onSave={handleFeedbackSaved}
         />
       )}
     </motion.div>

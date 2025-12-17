@@ -81,3 +81,25 @@ export async function deleteSession(sessionId: string) {
     }
   })
 }
+
+export async function getUpcomingSessions(teamId: string, limit: number = 10) {
+  return withSessionRetry(async () => {
+    try {
+      const now = new Date().toISOString()
+
+      const { data, error } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('team_id', teamId)
+        .gte('session_date', now)
+        .order('session_date', { ascending: true })
+        .limit(limit)
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching upcoming sessions:', error)
+      return { data: null, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
+  })
+}

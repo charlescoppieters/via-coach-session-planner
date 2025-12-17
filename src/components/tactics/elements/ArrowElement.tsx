@@ -60,11 +60,11 @@ export const ArrowElement: React.FC<ArrowElementProps> = ({
       {/* Arrow */}
       <Arrow
         points={[x1, y1, x2, y2]}
-        stroke="#FFFFFF"
+        stroke={element.color}
         strokeWidth={LINE_STROKE_WIDTH}
         pointerLength={ARROW_POINTER_LENGTH}
         pointerWidth={ARROW_POINTER_WIDTH}
-        fill="#FFFFFF"
+        fill={element.color}
         dash={element.dashed ? [10, 5] : undefined}
         lineCap="round"
         lineJoin="round"

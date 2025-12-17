@@ -11,46 +11,42 @@ import { useTeam } from '@/contexts/TeamContext'
 import {
   getTeamPositionalProfiles,
   getSystemDefaults,
+  getInPossessionAttributes,
+  getOutOfPossessionAttributes,
   createTeamPositionalProfile,
   updatePositionalProfile,
   subscribeToPositionalProfiles,
   revertTeamPositionalProfiles,
+  normalizeProfileAttributes,
   type PositionalProfile,
   type SystemDefault,
+  type PositionalProfileAttributes,
 } from '@/lib/methodology'
+import { PositionCard } from '@/components/methodology/PositionCard'
+import { PositionEditModal } from '@/components/methodology/PositionEditModal'
 
 // Position sort order: goalkeeper → defensive → midfield → attacking
 const POSITION_SORT_ORDER: Record<string, number> = {
-  // Goalkeeper
-  goalkeeper: 1,
+  // Default positions
+  gk: 1,
+  fullback: 10,
+  centre_back: 11,
+  midfielder: 20,
+  winger: 30,
+  striker: 40,
+  // Advanced positions
   sweeper_keeper: 2,
-  // Defensive
-  centre_back: 10,
-  ball_playing_cb: 11,
-  full_back: 12,
-  inverted_fullback: 13,
-  defensive_fullback: 14,
-  wing_back: 15,
-  defensive_midfielder: 20,
-  regista: 21,
-  // Midfield
-  central_midfielder: 30,
-  box_to_box: 31,
-  deep_lying_playmaker: 32,
-  mezzala: 33,
-  attacking_midfielder: 40,
-  trequartista: 41,
-  enganche: 42,
-  // Attacking
-  winger: 50,
-  inside_forward: 51,
-  inverted_winger: 52,
-  striker: 60,
-  false_nine: 61,
-  target_man: 62,
-  poacher: 63,
-  complete_forward: 64,
-  second_striker: 65,
+  inverted_fb: 12,
+  wing_back: 13,
+  ball_playing_cb: 14,
+  defensive_mid: 21,
+  attacking_mid: 22,
+  playmaker: 23,
+  wide_attacker: 31,
+  centre_forward: 41,
+  inside_forward: 42,
+  false_nine: 43,
+  target_man: 44,
 }
 
 export default function MyPositionalProfilingPage() {
@@ -59,7 +55,8 @@ export default function MyPositionalProfilingPage() {
 
   const [profiles, setProfiles] = useState<PositionalProfile[]>([])
   const [positions, setPositions] = useState<SystemDefault[]>([])
-  const [attributes, setAttributes] = useState<SystemDefault[]>([])
+  const [inPossessionOptions, setInPossessionOptions] = useState<SystemDefault[]>([])
+  const [outOfPossessionOptions, setOutOfPossessionOptions] = useState<SystemDefault[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -68,6 +65,10 @@ export default function MyPositionalProfilingPage() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [pendingChanges, setPendingChanges] = useState<Record<string, boolean>>({})
   const [isSavingPositions, setIsSavingPositions] = useState(false)
+
+  // Edit attributes modal
+  const [editingProfile, setEditingProfile] = useState<PositionalProfile | null>(null)
+  const [isSavingAttributes, setIsSavingAttributes] = useState(false)
 
   // Revert modal state
   const [showRevertConfirm, setShowRevertConfirm] = useState(false)
@@ -78,19 +79,22 @@ export default function MyPositionalProfilingPage() {
 
     setIsLoading(true)
 
-    // Fetch system defaults for positions and attributes
-    const [positionsRes, attributesRes, profilesRes] = await Promise.all([
+    // Fetch system defaults for positions and both attribute types
+    const [positionsRes, inPossRes, outPossRes, profilesRes] = await Promise.all([
       getSystemDefaults('positions'),
-      getSystemDefaults('attributes'),
+      getInPossessionAttributes(),
+      getOutOfPossessionAttributes(),
       getTeamPositionalProfiles(club.id, selectedTeamId),
     ])
 
     if (positionsRes.error) setError(positionsRes.error)
-    if (attributesRes.error) setError(attributesRes.error)
+    if (inPossRes.error) setError(inPossRes.error)
+    if (outPossRes.error) setError(outPossRes.error)
     if (profilesRes.error) setError(profilesRes.error)
 
     if (positionsRes.data) setPositions(positionsRes.data)
-    if (attributesRes.data) setAttributes(attributesRes.data)
+    if (inPossRes.data) setInPossessionOptions(inPossRes.data)
+    if (outPossRes.data) setOutOfPossessionOptions(outPossRes.data)
 
     if (profilesRes.data) {
       setProfiles(profilesRes.data)
@@ -147,10 +151,8 @@ export default function MyPositionalProfilingPage() {
           await updatePositionalProfile(existingProfile.id, { is_active: isActive })
         }
       } else if (isActive) {
-        // Create new profile if being activated
-        const position = positions.find((p) => p.key === positionKey)
-        const defaultAttrs = position?.value?.default_attributes || []
-        await createTeamPositionalProfile(club.id, selectedTeamId, positionKey, defaultAttrs.slice(0, 5))
+        // Create new profile if being activated (attributes will be auto-fetched from position defaults)
+        await createTeamPositionalProfile(club.id, selectedTeamId, positionKey)
       }
     }
 
@@ -159,29 +161,31 @@ export default function MyPositionalProfilingPage() {
     setIsManageModalOpen(false)
   }
 
-  const handleAttributeChange = async (profileId: string, index: number, newValue: string) => {
-    const profile = profiles.find((p) => p.id === profileId)
-    if (!profile) return
+  const handleEditPosition = (profile: PositionalProfile) => {
+    setEditingProfile(profile)
+  }
 
-    const newAttributes = [...(profile.attributes || [])]
+  const handleSaveAttributes = async (attributes: PositionalProfileAttributes) => {
+    if (!editingProfile) return
 
-    // Ensure array has enough slots
-    while (newAttributes.length <= index) {
-      newAttributes.push('')
+    setIsSavingAttributes(true)
+    setError('')
+
+    const { error: saveError } = await updatePositionalProfile(editingProfile.id, { attributes })
+
+    if (saveError) {
+      setError(saveError)
+      setIsSavingAttributes(false)
+      return
     }
 
-    newAttributes[index] = newValue
-
-    // Optimistically update local state immediately
+    // Update local state optimistically
     setProfiles((prev) =>
-      prev.map((p) =>
-        p.id === profileId ? { ...p, attributes: newAttributes } : p
-      )
+      prev.map((p) => (p.id === editingProfile.id ? { ...p, attributes } : p))
     )
 
-    // Filter out empty values but keep order for database
-    const filteredAttrs = newAttributes.filter((a) => a !== '')
-    await updatePositionalProfile(profileId, { attributes: filteredAttrs })
+    setIsSavingAttributes(false)
+    setEditingProfile(null)
   }
 
   // Handle revert
@@ -210,11 +214,6 @@ export default function MyPositionalProfilingPage() {
   const getPositionDescription = (key: string) => {
     const position = positions.find((p) => p.key === key)
     return position?.value?.description || ''
-  }
-
-  const getAttributeName = (key: string) => {
-    const attr = attributes.find((a) => a.key === key)
-    return attr?.value?.name || key
   }
 
   const activeProfiles = profiles
@@ -277,8 +276,7 @@ export default function MyPositionalProfilingPage() {
               color: theme.colors.text.secondary,
             }}
           >
-            Clear descriptions of each position that align with your playing style and team
-            structure
+            Define key attributes for each position in your team&apos;s playing system
           </p>
         </div>
         <div style={{ display: 'flex', gap: theme.spacing.sm }}>
@@ -341,7 +339,7 @@ export default function MyPositionalProfilingPage() {
       )}
 
       {/* Positions List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.lg }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.md }}>
         {activeProfiles.length === 0 ? (
           <div
             style={{
@@ -353,100 +351,34 @@ export default function MyPositionalProfilingPage() {
             }}
           >
             <p style={{ color: theme.colors.text.secondary }}>
-              No positions configured. Click &quot;Manage positions&quot; to add positions.
+              No positions configured. Click &quot;Manage Positions&quot; to add positions.
             </p>
           </div>
         ) : (
           activeProfiles.map((profile) => (
-            <div
+            <PositionCard
               key={profile.id}
-              style={{
-                backgroundColor: theme.colors.background.secondary,
-                border: '1px solid rgba(68, 68, 68, 0.3)',
-                borderRadius: theme.borderRadius.lg,
-                padding: theme.spacing.xl,
-              }}
-            >
-              <h3
-                style={{
-                  fontSize: theme.typography.fontSize.xl,
-                  fontWeight: theme.typography.fontWeight.semibold,
-                  color: theme.colors.text.primary,
-                  marginBottom: theme.spacing.sm,
-                }}
-              >
-                {getPositionName(profile.position_key)}
-              </h3>
-              <p
-                style={{
-                  fontSize: theme.typography.fontSize.base,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.lg,
-                }}
-              >
-                {getPositionDescription(profile.position_key)}
-              </p>
-
-              <div
-                style={{
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.sm,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Priority Attributes
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: theme.spacing.sm,
-                  justifyContent: 'flex-start',
-                }}
-              >
-                {[0, 1, 2, 3, 4].map((index) => {
-                  const currentValue = profile.attributes?.[index] || ''
-                  return (
-                    <select
-                      key={index}
-                      value={currentValue}
-                      onChange={(e) => handleAttributeChange(profile.id, index, e.target.value)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: theme.colors.background.tertiary,
-                        color: currentValue ? theme.colors.text.primary : theme.colors.text.secondary,
-                        border: `1px solid ${theme.colors.border.primary}`,
-                        borderRadius: theme.borderRadius.md,
-                        fontSize: theme.typography.fontSize.sm,
-                        cursor: 'pointer',
-                        flex: 1,
-                        minWidth: '150px',
-                        WebkitAppearance: 'none',
-                        MozAppearance: 'none',
-                        appearance: 'none',
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-                        backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'right 12px center',
-                      }}
-                    >
-                      <option value="">Select</option>
-                      {attributes.map((attr) => (
-                        <option key={attr.key} value={attr.key}>
-                          {attr.value?.name || attr.key}
-                        </option>
-                      ))}
-                    </select>
-                  )
-                })}
-              </div>
-            </div>
+              positionName={getPositionName(profile.position_key)}
+              description={getPositionDescription(profile.position_key)}
+              onEdit={() => handleEditPosition(profile)}
+            />
           ))
         )}
       </div>
+
+      {/* Position Edit Modal */}
+      {editingProfile && (
+        <PositionEditModal
+          positionName={getPositionName(editingProfile.position_key)}
+          positionDescription={getPositionDescription(editingProfile.position_key)}
+          attributes={normalizeProfileAttributes(editingProfile.attributes)}
+          inPossessionOptions={inPossessionOptions}
+          outOfPossessionOptions={outOfPossessionOptions}
+          onSave={handleSaveAttributes}
+          onClose={() => setEditingProfile(null)}
+          isSaving={isSavingAttributes}
+        />
+      )}
 
       {/* Manage Positions Modal */}
       {isManageModalOpen && (

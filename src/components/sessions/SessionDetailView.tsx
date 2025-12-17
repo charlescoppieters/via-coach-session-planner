@@ -44,9 +44,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
     age: number | null;
     position: string | null;
     gender: string | null;
-    target_1: string | null;
-    target_2: string | null;
-    target_3: string | null;
+    idps: Array<{ attribute_key: string; priority: number; notes: string | null }>;
   }>>([]);
 
   // Callback to receive content from SessionEditor
@@ -95,17 +93,61 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
     setTeamRules([]);
   }, [coachId, team.id]);
 
-  // Fetch players with IDP data for the team
+  // Fetch players for the team with their active IDPs
   useEffect(() => {
     const fetchPlayers = async () => {
       try {
         const { data: playersData } = await supabase
           .from('players')
-          .select('name, age, position, gender, target_1, target_2, target_3')
+          .select(`
+            id,
+            name,
+            age,
+            position,
+            gender,
+            player_idps!inner (
+              attribute_key,
+              priority,
+              notes
+            )
+          `)
+          .eq('team_id', team.id)
+          .eq('player_idps.status', 'active')
+          .order('name', { ascending: true });
+
+        // Also fetch players without IDPs
+        const { data: allPlayersData } = await supabase
+          .from('players')
+          .select('id, name, age, position, gender')
           .eq('team_id', team.id)
           .order('name', { ascending: true });
 
-        setPlayers(playersData || []);
+        // Merge players with and without IDPs
+        interface PlayerWithIdps {
+          id: string;
+          name: string;
+          age: number | null;
+          position: string | null;
+          gender: string | null;
+          player_idps: Array<{ attribute_key: string; priority: number; notes: string | null }>;
+        }
+
+        const playersWithIdps = new Map<string, PlayerWithIdps>(
+          (playersData || []).map((p: PlayerWithIdps) => [p.id, p])
+        );
+
+        const mergedPlayers = (allPlayersData || []).map((player: { id: string; name: string; age: number | null; position: string | null; gender: string | null }) => {
+          const playerWithIdps = playersWithIdps.get(player.id);
+          return {
+            name: player.name,
+            age: player.age,
+            position: player.position,
+            gender: player.gender,
+            idps: playerWithIdps ? playerWithIdps.player_idps : []
+          };
+        });
+
+        setPlayers(mergedPlayers);
       } catch (error) {
         console.error('Failed to fetch players:', error);
       }
@@ -379,6 +421,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
                 sessionId={sessionId}
                 coachId={coachId}
                 clubId={currentSession?.club_id || null}
+                teamId={team.id}
                 readOnly={true}
               />
             </div>

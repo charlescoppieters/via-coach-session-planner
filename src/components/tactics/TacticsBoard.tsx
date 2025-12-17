@@ -13,12 +13,14 @@ import {
   type TacticsState,
   type TacticsElement,
   type ToolType,
+  type PitchView,
   type TacticsBoardProps,
-  DEFAULT_CONE_COLOR,
   PITCH_ASPECT_RATIO,
   DEFAULT_PITCH_WIDTH,
   DEFAULT_PITCH_HEIGHT,
 } from './types';
+
+const DEFAULT_COLOR = '#3B82F6'; // Blue
 import type Konva from 'konva';
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -59,6 +61,7 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
   const [elements, setElements] = useState<TacticsElement[]>(initialData?.elements || []);
   const [selectedTool, setSelectedTool] = useState<ToolType>('select');
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [pitchView, setPitchView] = useState<PitchView>('full');
 
   // Sync elements when initialData changes (for re-editing saved diagrams)
   useEffect(() => {
@@ -66,10 +69,31 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
       setElements(initialData.elements);
     }
   }, [initialData?.elements]);
-  const [selectedTeam, setSelectedTeam] = useState<'home' | 'away'>('home');
-  const [selectedConeColor, setSelectedConeColor] = useState<string>(DEFAULT_CONE_COLOR);
-  const [isDashed, setIsDashed] = useState(false);
-  const [playerCounter, setPlayerCounter] = useState({ home: 1, away: 1 });
+  // Track color per tool type so each tool remembers its color
+  const [toolColors, setToolColors] = useState<Record<string, string>>({
+    player: DEFAULT_COLOR,
+    cone: '#F97316', // Orange
+    arrow: '#FFFFFF',
+    line: '#FFFFFF',
+  });
+  // Track dashed setting per tool (arrow/line)
+  const [toolDashed, setToolDashed] = useState<Record<string, boolean>>({
+    arrow: false,
+    line: false,
+  });
+  const [playerCounter, setPlayerCounter] = useState(1);
+
+  // Get current color for the selected tool
+  const selectedColor = toolColors[selectedTool] || DEFAULT_COLOR;
+  const setSelectedColor = (color: string) => {
+    setToolColors(prev => ({ ...prev, [selectedTool]: color }));
+  };
+
+  // Get current dashed setting for the selected tool
+  const isDashed = toolDashed[selectedTool] || false;
+  const setIsDashed = (dashed: boolean) => {
+    setToolDashed(prev => ({ ...prev, [selectedTool]: dashed }));
+  };
 
   // Drawing state for arrows/lines
   const [isDrawing, setIsDrawing] = useState(false);
@@ -108,31 +132,27 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
 
     // Add new element based on selected tool
     if (selectedTool === 'player' && e.target === stage) {
-      const currentNumber = playerCounter[selectedTeam];
       const newPlayer: TacticsElement = {
         type: 'player',
         id: generateId(),
         x: refX,
         y: refY,
-        number: currentNumber,
-        team: selectedTeam,
+        number: playerCounter,
+        color: selectedColor,
       };
       setElements(prev => [...prev, newPlayer]);
-      setPlayerCounter(prev => ({
-        ...prev,
-        [selectedTeam]: prev[selectedTeam] + 1,
-      }));
+      setPlayerCounter(prev => prev + 1);
     } else if (selectedTool === 'cone' && e.target === stage) {
       const newCone: TacticsElement = {
         type: 'cone',
         id: generateId(),
         x: refX,
         y: refY,
-        color: selectedConeColor,
+        color: selectedColor,
       };
       setElements(prev => [...prev, newCone]);
     }
-  }, [selectedTool, selectedTeam, selectedConeColor, playerCounter, readOnly, scale]);
+  }, [selectedTool, selectedColor, playerCounter, readOnly, scale]);
 
   // Handle mouse down for drawing arrows/lines
   const handleMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -158,16 +178,18 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
           id: generateId(),
           points: [refX, refY, refX, refY],
           dashed: isDashed,
+          color: selectedColor,
         }
       : {
           type: 'line',
           id: generateId(),
           points: [refX, refY, refX, refY],
           dashed: isDashed,
+          color: selectedColor,
         };
 
     setCurrentDrawing(newElement);
-  }, [selectedTool, isDashed, readOnly, scale]);
+  }, [selectedTool, isDashed, selectedColor, readOnly, scale]);
 
   // Handle mouse move for drawing
   const handleMouseMove = useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -251,7 +273,7 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
   const handleClearAll = useCallback(() => {
     setElements([]);
     setSelectedElementId(null);
-    setPlayerCounter({ home: 1, away: 1 });
+    setPlayerCounter(1);
   }, []);
 
   // Keyboard shortcuts
@@ -325,15 +347,15 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
         <TacticsToolbar
           selectedTool={selectedTool}
           onToolChange={setSelectedTool}
-          selectedTeam={selectedTeam}
-          onTeamChange={setSelectedTeam}
-          selectedConeColor={selectedConeColor}
-          onConeColorChange={setSelectedConeColor}
+          selectedColor={selectedColor}
+          onColorChange={setSelectedColor}
           isDashed={isDashed}
           onDashedChange={setIsDashed}
           onDeleteSelected={handleDeleteSelected}
           onClearAll={handleClearAll}
           hasSelection={!!selectedElementId}
+          pitchView={pitchView}
+          onPitchViewChange={setPitchView}
         />
       )}
 
@@ -362,7 +384,7 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
         >
           <Layer>
             {/* Pitch background */}
-            <PitchBackground width={dimensions.width} height={dimensions.height} />
+            <PitchBackground width={dimensions.width} height={dimensions.height} view={pitchView} />
           </Layer>
 
           <Layer scaleX={scale} scaleY={scale}>

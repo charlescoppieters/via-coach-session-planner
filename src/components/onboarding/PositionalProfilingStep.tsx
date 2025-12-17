@@ -8,40 +8,40 @@ import { theme } from '@/styles/theme'
 import {
   getClubPositionalProfiles,
   getSystemDefaults,
+  getInPossessionAttributes,
+  getOutOfPossessionAttributes,
   createPositionalProfile,
   updatePositionalProfile,
+  normalizeProfileAttributes,
   type PositionalProfile,
   type SystemDefault,
+  type PositionalProfileAttributes,
 } from '@/lib/methodology'
+import { PositionCard } from '@/components/methodology/PositionCard'
+import { PositionEditModal } from '@/components/methodology/PositionEditModal'
 
 // Position sort order: goalkeeper → defensive → midfield → attacking
 const POSITION_SORT_ORDER: Record<string, number> = {
-  goalkeeper: 1,
-  sweeper_keeper: 2,
-  centre_back: 10,
-  ball_playing_cb: 11,
-  full_back: 12,
-  inverted_fullback: 13,
-  defensive_fullback: 14,
-  wing_back: 15,
-  defensive_midfielder: 20,
-  regista: 21,
-  central_midfielder: 30,
-  box_to_box: 31,
-  deep_lying_playmaker: 32,
-  mezzala: 33,
-  attacking_midfielder: 40,
-  trequartista: 41,
-  enganche: 42,
-  winger: 50,
-  inside_forward: 51,
-  inverted_winger: 52,
-  striker: 60,
-  false_nine: 61,
-  target_man: 62,
-  poacher: 63,
-  complete_forward: 64,
-  second_striker: 65,
+  // Default positions
+  gk: 1,
+  fullback: 10,
+  centre_back: 11,
+  midfielder: 20,
+  winger: 30,
+  striker: 40,
+  // Advanced positions
+  wide_attacker: 31,
+  centre_forward: 41,
+  inverted_fb: 12,
+  attacking_fb: 13,
+  defensive_fb: 14,
+  number_6: 21,
+  number_8: 22,
+  number_10: 23,
+  inside_forward: 32,
+  poacher: 42,
+  target_man: 43,
+  complete_striker: 44,
 }
 
 interface PositionalProfilingStepProps {
@@ -59,7 +59,8 @@ export const PositionalProfilingStep: React.FC<PositionalProfilingStepProps> = (
 }) => {
   const [profiles, setProfiles] = useState<PositionalProfile[]>([])
   const [positions, setPositions] = useState<SystemDefault[]>([])
-  const [attributes, setAttributes] = useState<SystemDefault[]>([])
+  const [inPossessionAttributes, setInPossessionAttributes] = useState<SystemDefault[]>([])
+  const [outOfPossessionAttributes, setOutOfPossessionAttributes] = useState<SystemDefault[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -69,21 +70,28 @@ export const PositionalProfilingStep: React.FC<PositionalProfilingStepProps> = (
   const [pendingChanges, setPendingChanges] = useState<Record<string, boolean>>({})
   const [isSavingPositions, setIsSavingPositions] = useState(false)
 
+  // Edit modal state
+  const [editingProfile, setEditingProfile] = useState<PositionalProfile | null>(null)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+
   const fetchData = useCallback(async () => {
     setIsLoading(true)
 
-    const [positionsRes, attributesRes, profilesRes] = await Promise.all([
+    const [positionsRes, inPossRes, outPossRes, profilesRes] = await Promise.all([
       getSystemDefaults('positions'),
-      getSystemDefaults('attributes'),
+      getInPossessionAttributes(),
+      getOutOfPossessionAttributes(),
       getClubPositionalProfiles(clubId),
     ])
 
     if (positionsRes.error) setError(positionsRes.error)
-    if (attributesRes.error) setError(attributesRes.error)
+    if (inPossRes.error) setError(inPossRes.error)
+    if (outPossRes.error) setError(outPossRes.error)
     if (profilesRes.error) setError(profilesRes.error)
 
     if (positionsRes.data) setPositions(positionsRes.data)
-    if (attributesRes.data) setAttributes(attributesRes.data)
+    if (inPossRes.data) setInPossessionAttributes(inPossRes.data)
+    if (outPossRes.data) setOutOfPossessionAttributes(outPossRes.data)
     if (profilesRes.data) setProfiles(profilesRes.data)
 
     setIsLoading(false)
@@ -122,9 +130,8 @@ export const PositionalProfilingStep: React.FC<PositionalProfilingStepProps> = (
           await updatePositionalProfile(existingProfile.id, { is_active: isActive })
         }
       } else if (isActive) {
-        const position = positions.find(p => p.key === positionKey)
-        const defaultAttrs = position?.value?.default_attributes || []
-        await createPositionalProfile(clubId, positionKey, defaultAttrs.slice(0, 5))
+        // Create new profile with position-specific defaults (handled by createPositionalProfile)
+        await createPositionalProfile(clubId, positionKey)
       }
     }
 
@@ -133,25 +140,23 @@ export const PositionalProfilingStep: React.FC<PositionalProfilingStepProps> = (
     setIsManageModalOpen(false)
   }
 
-  const handleAttributeChange = async (profileId: string, index: number, newValue: string) => {
-    const profile = profiles.find(p => p.id === profileId)
-    if (!profile) return
+  const handleEditProfile = (profile: PositionalProfile) => {
+    setEditingProfile(profile)
+  }
 
-    const newAttributes = [...(profile.attributes || [])]
+  const handleSaveProfileAttributes = async (attributes: PositionalProfileAttributes) => {
+    if (!editingProfile) return
 
-    while (newAttributes.length <= index) {
-      newAttributes.push('')
-    }
+    setIsSavingProfile(true)
+    await updatePositionalProfile(editingProfile.id, { attributes })
 
-    newAttributes[index] = newValue
-
-    // Optimistically update local state
+    // Update local state
     setProfiles(prev =>
-      prev.map(p => (p.id === profileId ? { ...p, attributes: newAttributes } : p))
+      prev.map(p => (p.id === editingProfile.id ? { ...p, attributes } : p))
     )
 
-    const filteredAttrs = newAttributes.filter(a => a !== '')
-    await updatePositionalProfile(profileId, { attributes: filteredAttrs })
+    setIsSavingProfile(false)
+    setEditingProfile(null)
   }
 
   const getPositionName = (key: string) => {
@@ -229,8 +234,8 @@ export const PositionalProfilingStep: React.FC<PositionalProfilingStepProps> = (
           marginTop: theme.spacing.sm,
         }}
       >
-        Define key attributes for each position in your system. AI uses these to understand
-        player development priorities and provide personalized insights.
+        Define key attributes for each position in your system. Each position has in-possession
+        and out-of-possession attributes that guide player development.
       </p>
 
       {/* Manage Positions Button */}
@@ -275,13 +280,11 @@ export const PositionalProfilingStep: React.FC<PositionalProfilingStepProps> = (
       {/* Positions List */}
       <div
         style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: theme.spacing.md,
           marginTop: theme.spacing.xl,
           minHeight: '320px',
           maxHeight: '320px',
           overflowY: 'auto',
+          paddingRight: theme.spacing.sm,
         }}
       >
         {activeProfiles.length === 0 ? (
@@ -299,93 +302,22 @@ export const PositionalProfilingStep: React.FC<PositionalProfilingStepProps> = (
             </p>
           </div>
         ) : (
-          activeProfiles.map(profile => (
-            <div
-              key={profile.id}
-              style={{
-                backgroundColor: theme.colors.background.primary,
-                border: `1px solid ${theme.colors.border.primary}`,
-                borderRadius: theme.borderRadius.lg,
-                padding: theme.spacing.lg,
-              }}
-            >
-              <h3
-                style={{
-                  fontSize: theme.typography.fontSize.lg,
-                  fontWeight: theme.typography.fontWeight.semibold,
-                  color: theme.colors.text.primary,
-                  marginBottom: theme.spacing.xs,
-                }}
-              >
-                {getPositionName(profile.position_key)}
-              </h3>
-              <p
-                style={{
-                  fontSize: theme.typography.fontSize.sm,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.md,
-                }}
-              >
-                {getPositionDescription(profile.position_key)}
-              </p>
-
-              <div
-                style={{
-                  fontSize: theme.typography.fontSize.xs,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.muted,
-                  marginBottom: theme.spacing.sm,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Priority Attributes
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                {[0, 1, 2, 3, 4].map(index => {
-                  const currentValue = profile.attributes?.[index] || ''
-                  return (
-                    <select
-                      key={index}
-                      value={currentValue}
-                      onChange={e => handleAttributeChange(profile.id, index, e.target.value)}
-                      style={{
-                        padding: '6px 10px',
-                        backgroundColor: theme.colors.background.tertiary,
-                        color: currentValue ? theme.colors.text.primary : theme.colors.text.secondary,
-                        border: `1px solid ${theme.colors.border.primary}`,
-                        borderRadius: theme.borderRadius.md,
-                        fontSize: theme.typography.fontSize.sm,
-                        cursor: 'pointer',
-                        flex: 1,
-                        minWidth: '120px',
-                        WebkitAppearance: 'none',
-                        MozAppearance: 'none',
-                        appearance: 'none',
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-                        backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'right 10px center',
-                      }}
-                    >
-                      <option value="">Select</option>
-                      {attributes.map(attr => (
-                        <option key={attr.key} value={attr.key}>
-                          {attr.value?.name || attr.key}
-                        </option>
-                      ))}
-                    </select>
-                  )
-                })}
-              </div>
-            </div>
-          ))
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: theme.spacing.md,
+            }}
+          >
+            {activeProfiles.map(profile => (
+              <PositionCard
+                key={profile.id}
+                positionName={getPositionName(profile.position_key)}
+                description={getPositionDescription(profile.position_key)}
+                onEdit={() => handleEditProfile(profile)}
+              />
+            ))}
+          </div>
         )}
       </div>
 
@@ -773,6 +705,20 @@ export const PositionalProfilingStep: React.FC<PositionalProfilingStepProps> = (
             </div>
           </div>
         </div>
+      )}
+
+      {/* Position Edit Modal */}
+      {editingProfile && (
+        <PositionEditModal
+          positionName={getPositionName(editingProfile.position_key)}
+          positionDescription={getPositionDescription(editingProfile.position_key)}
+          attributes={normalizeProfileAttributes(editingProfile.attributes)}
+          inPossessionOptions={inPossessionAttributes}
+          outOfPossessionOptions={outOfPossessionAttributes}
+          onSave={handleSaveProfileAttributes}
+          onClose={() => setEditingProfile(null)}
+          isSaving={isSavingProfile}
+        />
       )}
     </div>
   )

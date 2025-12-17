@@ -26,19 +26,23 @@ import { BlockPickerModal } from './BlockPickerModal';
 import {
   type AssignedBlock,
   type SessionBlock,
+  type BlockAttribute,
   getSessionBlocks,
   createAndAssignBlock,
   assignBlockToSession,
   removeBlockFromSession,
   updateAssignmentPositions,
   editBlockWithCopyOnWrite,
+  saveBlockAttributes,
 } from '@/lib/sessionBlocks';
+import type { BlockSaveData } from './BlockEditorModal';
 import type { TacticsElement } from '@/components/tactics/types';
 
 interface BlockEditorProps {
   sessionId: string;
   coachId: string | null;
   clubId: string | null;
+  teamId?: string | null;
   readOnly?: boolean;
   onBlocksChange?: (blocks: AssignedBlock[]) => void;
 }
@@ -47,6 +51,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   sessionId,
   coachId,
   clubId,
+  teamId,
   readOnly = false,
   onBlocksChange,
 }) => {
@@ -155,11 +160,13 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   };
 
   // Save block (create or update)
-  const handleSaveBlock = async (data: { title: string; description: string | null; coaching_points: string | null; image_url: string | null; diagram_data: TacticsElement[] | null; duration: number | null }) => {
+  const handleSaveBlock = async (data: BlockSaveData) => {
     if (!coachId) {
       console.error('No coachId available');
       return;
     }
+
+    let blockId: string | null = null;
 
     if (editingBlock) {
       // Update existing block (with copy-on-write if not owner)
@@ -167,7 +174,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         editingBlock.id,
         sessionId,
         editingBlock.assignment_id,
-        data,
+        {
+          title: data.title,
+          description: data.description,
+          coaching_points: data.coaching_points,
+          image_url: data.image_url,
+          diagram_data: data.diagram_data,
+          duration: data.duration,
+          ball_rolling: data.ball_rolling,
+        },
         coachId
       );
 
@@ -177,6 +192,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       }
 
       if (updatedBlock) {
+        blockId = updatedBlock.id;
         // Update local state
         setBlocks((prev) =>
           prev.map((b) =>
@@ -198,6 +214,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           image_url: data.image_url,
           diagram_data: data.diagram_data,
           duration: data.duration,
+          ball_rolling: data.ball_rolling,
           creator_id: coachId,
           club_id: clubId,
           is_public: false,
@@ -212,8 +229,21 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       }
 
       if (newBlock) {
+        blockId = newBlock.id;
         setBlocks((prev) => [...prev, newBlock]);
       }
+    }
+
+    // Save block attributes if we have a blockId and attributes
+    if (blockId && data.attributes && data.attributes.length > 0) {
+      const { error: attrError } = await saveBlockAttributes(blockId, data.attributes);
+      if (attrError) {
+        console.error('Failed to save block attributes:', attrError);
+        // Don't throw - the block was saved successfully, just attributes failed
+      }
+    } else if (blockId && data.attributes && data.attributes.length === 0) {
+      // Clear attributes if empty array provided (editing case)
+      await saveBlockAttributes(blockId, []);
     }
 
     setShowModal(false);
@@ -370,6 +400,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           onCancel={() => setShowPicker(false)}
           coachId={coachId}
           clubId={clubId}
+          teamId={teamId}
+          excludeBlockIds={blocks.map((b) => b.id)}
         />
       )}
 

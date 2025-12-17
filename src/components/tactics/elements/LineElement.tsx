@@ -60,7 +60,7 @@ export const LineElement: React.FC<LineElementProps> = ({
       {/* Line */}
       <Line
         points={[x1, y1, x2, y2]}
-        stroke="#FFFFFF"
+        stroke={element.color}
         strokeWidth={LINE_STROKE_WIDTH}
         dash={element.dashed ? [10, 5] : undefined}
         lineCap="round"

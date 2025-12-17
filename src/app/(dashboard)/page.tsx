@@ -1,15 +1,105 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { MdDashboard } from 'react-icons/md'
-import { HiOfficeBuilding } from 'react-icons/hi'
 import { theme } from '@/styles/theme'
 import { mainVariants } from '@/constants/animations'
-import { useAuth } from '@/contexts/AuthContext'
+import { useTeam } from '@/contexts/TeamContext'
+import type {
+  TimePeriodPreset,
+  TeamTrainingSummary,
+  TeamIDPGap,
+  TeamBlockRecommendation,
+} from '@/types/database'
+import {
+  getTeamTrainingSummary,
+  getTeamIDPGaps,
+  getTeamBlockRecommendations,
+} from '@/lib/teamAnalytics'
+import { TimePeriodFilter } from '@/components/analysis/TimePeriodFilter'
+import { OverviewCards } from '@/components/analysis/OverviewCards'
+import { useRouter } from 'next/navigation'
 
 export default function DashboardPage() {
-  const { coach, club, isAdmin } = useAuth()
+  const { selectedTeam } = useTeam()
+  const router = useRouter()
+
+  // Time period state
+  const [preset, setPreset] = useState<TimePeriodPreset>('all')
+  const [startDate, setStartDate] = useState<Date | null>(null)
+  const [endDate, setEndDate] = useState<Date | null>(null)
+
+  // Data state
+  const [summary, setSummary] = useState<TeamTrainingSummary | null>(null)
+  const [gaps, setGaps] = useState<TeamIDPGap[] | null>(null)
+  const [recommendations, setRecommendations] = useState<TeamBlockRecommendation[] | null>(null)
+
+  // Loading states
+  const [loadingSummary, setLoadingSummary] = useState(true)
+  const [loadingGaps, setLoadingGaps] = useState(true)
+  const [loadingRecommendations, setLoadingRecommendations] = useState(true)
+
+  // Handle time period change
+  const handleTimePeriodChange = useCallback(
+    (newPreset: TimePeriodPreset, start: Date | null, end: Date | null) => {
+      setPreset(newPreset)
+      setStartDate(start)
+      setEndDate(end)
+    },
+    []
+  )
+
+  // Navigate to IDP gaps tab with expanded item
+  const handleIdpClick = useCallback((attributeKey: string) => {
+    router.push(`/team/analysis?tab=idp-gaps&expand=${attributeKey}`)
+  }, [router])
+
+  // Navigate to patterns tab with expanded block
+  const handleBlockClick = useCallback((blockId: string) => {
+    router.push(`/team/analysis?tab=patterns&expand=${blockId}`)
+  }, [router])
+
+  // Fetch data when team or date range changes
+  useEffect(() => {
+    if (!selectedTeam) {
+      setLoadingSummary(false)
+      setLoadingGaps(false)
+      setLoadingRecommendations(false)
+      return
+    }
+
+    const teamId = selectedTeam.id
+
+    // Fetch summary
+    async function fetchSummary() {
+      setLoadingSummary(true)
+      const { data } = await getTeamTrainingSummary(teamId, startDate, endDate)
+      setSummary(data)
+      setLoadingSummary(false)
+    }
+
+    // Fetch IDP gaps
+    async function fetchGaps() {
+      setLoadingGaps(true)
+      const { data } = await getTeamIDPGaps(teamId, startDate, endDate)
+      setGaps(data)
+      setLoadingGaps(false)
+    }
+
+    // Fetch block recommendations
+    async function fetchRecommendations() {
+      setLoadingRecommendations(true)
+      const { data } = await getTeamBlockRecommendations(teamId, startDate, endDate)
+      setRecommendations(data)
+      setLoadingRecommendations(false)
+    }
+
+    // Run all fetches in parallel
+    fetchSummary()
+    fetchGaps()
+    fetchRecommendations()
+  }, [selectedTeam, startDate, endDate])
 
   // Format today's date
   const formatTodaysDate = () => {
@@ -55,52 +145,54 @@ export default function DashboardPage() {
       <div
         style={{
           padding: theme.spacing.xl,
+          paddingBottom: theme.spacing.md,
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           flexShrink: 0,
+          gap: theme.spacing.md,
+          flexWrap: 'wrap',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: theme.spacing.md,
-          }}
-        >
-          <MdDashboard size={32} style={{ color: theme.colors.text.primary }} />
-          <h1
-            style={{
-              fontSize: theme.typography.fontSize['3xl'],
-              fontWeight: theme.typography.fontWeight.bold,
-              color: theme.colors.text.primary,
-              margin: 0,
-            }}
-          >
-            Dashboard
-          </h1>
-        </div>
-
-        {/* Date display */}
-        <div style={{ textAlign: 'right' }}>
+        <div>
           <div
             style={{
-              fontSize: theme.typography.fontSize.lg,
-              fontWeight: theme.typography.fontWeight.semibold,
-              color: theme.colors.text.primary,
+              display: 'flex',
+              alignItems: 'center',
+              gap: theme.spacing.md,
+              marginBottom: theme.spacing.xs,
             }}
           >
-            {formatTodaysDate().dayWithMonth}
+            <MdDashboard size={28} style={{ color: theme.colors.text.primary }} />
+            <h1
+              style={{
+                fontSize: theme.typography.fontSize['2xl'],
+                fontWeight: theme.typography.fontWeight.bold,
+                color: theme.colors.text.primary,
+                margin: 0,
+              }}
+            >
+              Dashboard
+            </h1>
           </div>
-          <div
+          <p
             style={{
               fontSize: theme.typography.fontSize.sm,
               color: theme.colors.text.secondary,
+              margin: 0,
             }}
           >
-            {formatTodaysDate().weekday}
-          </div>
+            {formatTodaysDate().weekday}, {formatTodaysDate().dayWithMonth}
+          </p>
         </div>
+
+        {/* Time Period Filter */}
+        <TimePeriodFilter
+          preset={preset}
+          startDate={startDate}
+          endDate={endDate}
+          onChange={handleTimePeriodChange}
+        />
       </div>
 
       {/* Content */}
@@ -109,24 +201,46 @@ export default function DashboardPage() {
           flex: 1,
           overflow: 'auto',
           padding: theme.spacing.xl,
-          paddingTop: 0,
+          paddingTop: theme.spacing.xl,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
         }}
       >
-        {/* Placeholder for future content */}
         <div
           style={{
-            marginTop: theme.spacing['2xl'],
-            padding: theme.spacing.xl,
-            backgroundColor: theme.colors.background.primary,
-            borderRadius: theme.borderRadius.lg,
-            border: `1px dashed ${theme.colors.border.primary}`,
-            textAlign: 'center',
-            color: theme.colors.text.secondary,
+            width: '100%',
+            maxWidth: '1400px',
+            paddingTop: '40px',
           }}
         >
-          <p style={{ margin: 0 }}>
-            More dashboard features coming soon: recent sessions, upcoming sessions, team stats, and quick actions.
-          </p>
+          {!selectedTeam ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '300px',
+                backgroundColor: theme.colors.background.primary,
+                borderRadius: theme.borderRadius.lg,
+                border: `1px dashed ${theme.colors.border.primary}`,
+                color: theme.colors.text.secondary,
+                fontSize: theme.typography.fontSize.base,
+              }}
+            >
+              Please select a team to view analytics
+            </div>
+          ) : (
+            <OverviewCards
+              summary={summary}
+              topIdps={gaps}
+              topBlocks={recommendations}
+              loading={loadingSummary || loadingGaps || loadingRecommendations}
+              onIdpClick={handleIdpClick}
+              onBlockClick={handleBlockClick}
+              sectionGap="48px"
+            />
+          )}
         </div>
       </div>
     </motion.div>

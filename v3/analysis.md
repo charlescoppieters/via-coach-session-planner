@@ -49,12 +49,15 @@ Analysis is scoped to individual IDP records, not arbitrary time periods.
 - If they change IDPs, each IDP period is analyzed separately
 - Coaches can view historical IDPs with full analysis for each period
 
-### 4. Accidental IDP Handling
+### 4. IDP States: Active vs Historical
 
-If an IDP's start and end dates are within ~24 hours of each other, the system should:
-- Flag it as potentially accidental
-- Offer the option to delete the record
-- Not include it in historical analysis if deleted
+IDPs exist in two states: **active** (currently assigned) or **historical** (ended).
+
+When a coach updates a player's IDPs, old IDPs being removed are handled as follows:
+- **If the player attended any session during the IDP period** → IDP becomes historical (set `ended_at`, kept for analysis)
+- **If the player attended no sessions during the IDP period** → IDP is deleted (no point keeping empty records)
+
+This automatically cleans up accidental IDP assignments or quick corrections while preserving meaningful historical data for periods when the player was actually training.
 
 ### 5. IDP-Scoped Tracking Only
 
@@ -671,19 +674,48 @@ $$;
 -- ============================================================
 -- FUNCTION: End current IDPs and start new ones
 -- Handles the IDP transition for a player
+-- IDPs being removed become historical only if player attended
+-- sessions during that IDP period; otherwise they are deleted
 -- ============================================================
 CREATE OR REPLACE FUNCTION update_player_idps(
   p_player_id UUID,
   p_new_idps JSONB  -- Array of {attribute_key, priority, notes}
 )
 RETURNS VOID AS $$
+DECLARE
+  v_new_attributes TEXT[];
 BEGIN
-  -- End all current active IDPs
+  -- Extract attribute keys from the new IDPs array
+  SELECT ARRAY_AGG(idp->>'attribute_key')
+  INTO v_new_attributes
+  FROM jsonb_array_elements(p_new_idps) as idp;
+
+  -- For IDPs being removed: check if player attended any sessions during the IDP period
+  -- If yes: mark as historical (set ended_at)
+  -- If no: delete the record
+
+  -- Delete IDPs with no session attendance during their period
+  DELETE FROM player_idps pi
+  WHERE pi.player_id = p_player_id
+    AND pi.ended_at IS NULL
+    AND pi.attribute_key != ALL(COALESCE(v_new_attributes, ARRAY[]::TEXT[]))
+    AND NOT EXISTS (
+      SELECT 1 FROM session_attendance sa
+      JOIN sessions s ON s.id = sa.session_id
+      WHERE sa.player_id = p_player_id
+        AND sa.status = 'present'
+        AND s.session_date >= pi.started_at
+        AND s.session_date <= NOW()
+    );
+
+  -- End IDPs that have session attendance (make historical)
   UPDATE player_idps
   SET ended_at = NOW(), updated_at = NOW()
-  WHERE player_id = p_player_id AND ended_at IS NULL;
+  WHERE player_id = p_player_id
+    AND ended_at IS NULL
+    AND attribute_key != ALL(COALESCE(v_new_attributes, ARRAY[]::TEXT[]));
 
-  -- Insert new IDPs
+  -- Insert new IDPs (only those not already active)
   INSERT INTO player_idps (player_id, attribute_key, priority, notes, started_at)
   SELECT
     p_player_id,
@@ -691,36 +723,31 @@ BEGIN
     COALESCE((idp->>'priority')::INTEGER, 1),
     (idp->>'notes')::TEXT,
     NOW()
-  FROM jsonb_array_elements(p_new_idps) as idp;
-END;
-$$ LANGUAGE plpgsql;
+  FROM jsonb_array_elements(p_new_idps) as idp
+  WHERE NOT EXISTS (
+    SELECT 1 FROM player_idps existing
+    WHERE existing.player_id = p_player_id
+      AND existing.attribute_key = (idp->>'attribute_key')::TEXT
+      AND existing.ended_at IS NULL
+  );
 
--- ============================================================
--- FUNCTION: Check for accidental IDP records
--- Returns IDP records with very short duration (< 24 hours)
--- ============================================================
-CREATE OR REPLACE FUNCTION get_accidental_idps(p_player_id UUID)
-RETURNS TABLE (
-  idp_id UUID,
-  attribute_key TEXT,
-  duration_hours FLOAT
-) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT
-    pi.id,
-    pi.attribute_key,
-    EXTRACT(EPOCH FROM (COALESCE(pi.ended_at, NOW()) - pi.started_at)) / 3600 as duration_hours
-  FROM player_idps pi
+  -- Update priority/notes for existing active IDPs that remain
+  UPDATE player_idps pi
+  SET
+    priority = COALESCE((new_idp.idp->>'priority')::INTEGER, pi.priority),
+    notes = COALESCE(new_idp.idp->>'notes', pi.notes),
+    updated_at = NOW()
+  FROM (
+    SELECT idp FROM jsonb_array_elements(p_new_idps) as idp
+  ) new_idp
   WHERE pi.player_id = p_player_id
-    AND pi.ended_at IS NOT NULL
-    AND EXTRACT(EPOCH FROM (pi.ended_at - pi.started_at)) < 86400;  -- < 24 hours
+    AND pi.ended_at IS NULL
+    AND pi.attribute_key = (new_idp.idp->>'attribute_key')::TEXT;
 END;
 $$ LANGUAGE plpgsql;
 
 GRANT EXECUTE ON FUNCTION generate_training_events TO authenticated;
 GRANT EXECUTE ON FUNCTION update_player_idps TO authenticated;
-GRANT EXECUTE ON FUNCTION get_accidental_idps TO authenticated;
 ```
 
 ### RLS Policies for New Tables
@@ -1004,43 +1031,46 @@ CREATE TRIGGER update_session_feedback_updated_at
 
 ## Implementation Phases
 
-| Phase | Focus | Key Deliverables |
-|-------|-------|------------------|
-| **1** | Data Foundation | `player_idps` table (replaces target_1/2/3), remove old columns, attendance UI |
-| **2** | Block Tagging | `session_block_attributes` table, manual tagging UI, LLM auto-suggest |
-| **3** | Training Events | `player_training_events` table, `generate_training_events()` RPC |
-| **4** | Feedback Input | `session_feedback` + `player_feedback_notes` tables, basic UI (text only) |
-| **5** | Voice Input | *(Deferred)* Audio recording, Whisper transcription, storage bucket |
-| **6** | Feedback Analysis | LLM extraction pipeline, `feedback_insights` table |
-| **7** | IDP Dashboard | Player IDP progress view, historical IDPs, basic stats |
-| **8** | Team Analytics | Team IDP gaps view, aggregate statistics |
-| **9** | Recommendations | Session planning integration, block suggestions |
-| **10** | PDF Export | Report generation, coach and player/parent versions |
+| Phase | Focus | Key Deliverables | Status |
+|-------|-------|------------------|--------|
+| **1** | Data Foundation | `player_idps` table (replaces target_1/2/3), IDP management UI | ✅ Complete |
+| **2** | Block Tagging | `session_block_attributes` table, manual tagging UI (LLM auto-suggest deferred) | ✅ Complete |
+| **3** | Feedback Input | `session_feedback` + `player_feedback_notes` tables, attendance UI, basic feedback UI | ✅ Complete |
+| **4** | Training Events | `player_training_events` table, `generate_training_events()` RPC | ✅ Complete |
+| **5** | Voice Input | *(Deferred)* Audio recording, Whisper transcription, storage bucket | |
+| **6** | Feedback Analysis | LLM extraction pipeline, `feedback_insights` table | |
+| **7** | IDP Dashboard | Player IDP progress view, historical IDPs, basic stats | ✅ Complete |
+| **8** | Team Analytics | Team IDP gaps view, aggregate statistics | |
+| **9** | Recommendations | Session planning integration, block suggestions | |
+| **10** | PDF Export | Report generation, coach and player/parent versions | |
 
 ### Phase Details
 
-**Phase 1: Data Foundation**
+**Phase 1: Data Foundation** ✅ COMPLETE
 - Create `player_idps` table (new IDP system with historical tracking)
-- Remove `target_1`, `target_2`, `target_3` columns from `players` table (fresh DB, no migration needed)
+- Remove `target_1`, `target_2`, `target_3` columns from `players` table
 - Build UI for managing player IDPs (add/edit/end IDPs)
-- Build attendance UI for `session_attendance` table (table already exists in schema)
+- Update all frontend code to use new IDP system (PlayerForm, PlayerDetail, page.tsx files, AI coach route)
 
-**Phase 2: Block Tagging**
+**Phase 2: Block Tagging** ✅ COMPLETE
 - Create `session_block_attributes` table
-- Build UI for manually tagging blocks with attributes
-- Integrate LLM auto-suggestion when creating/editing blocks
-- Store both LLM suggestions and coach overrides
+- Build UI for manually tagging blocks with attributes (tabbed interface in BlockEditorModal)
+- First-order and second-order attribute sections with relevance sliders
+- LLM auto-suggest deferred to later enhancement
 
-**Phase 3: Training Events**
-- Create `player_training_events` table
-- Create `generate_training_events()` SECURITY DEFINER function
-- Call function when session is marked complete
-- Build basic training events viewer (for debugging/verification)
-
-**Phase 4: Feedback System (Text Input)**
-- Build feedback input UI (integrated into session view)
-- Text input for team-level feedback and player-specific notes
+**Phase 3: Feedback System (Text Input)** ✅ COMPLETE
+- `SessionFeedbackModal.tsx` - Full modal UI with two-column layout
+- Attendance tracking (toggle switches for each player)
+- Team-level feedback textarea
+- Player-specific notes (click comment icon per player)
+- `sessionFeedback.ts` library with load/save functions
 - Feedback submission triggers training event generation
+
+**Phase 4: Training Events** ✅ COMPLETE
+- `player_training_events` table created
+- `generate_training_events()` SECURITY DEFINER function created
+- Function automatically called in `saveAllFeedback()` after feedback is saved
+- Only creates events for attributes matching player's active IDPs
 
 **Phase 5: Voice Input (Deferred)**
 - Deferred to later iteration
@@ -1051,10 +1081,17 @@ CREATE TRIGGER update_session_feedback_updated_at
 - Create LLM extraction pipeline (async processing)
 - Store structured insights in `feedback_insights`
 
-**Phase 7-8: Analytics**
-- Build player IDP progress dashboard
-- Show training opportunities, feedback sentiment, trends
-- Build team-level IDP gap analysis view
+**Phase 7: Player Analytics Dashboard** ✅ COMPLETE
+- `PlayerTabs.tsx` - 3-tab interface: Details, Development, Sessions
+- `PlayerDevelopmentTab.tsx` - Current/Historical IDP toggle, attendance summary
+- `IDPProgressCard.tsx` - Expandable cards with training progress, feedback sentiment, trend indicators
+- `PlayerSessionsTab.tsx` - Session history with pagination, attendance stats
+- `SessionHistoryCard.tsx` - Individual session detail cards
+- `playerAnalytics.ts` - Full library querying `player_idp_progress` and `player_attendance_summary` views
+- `ProgressBar.tsx` - Reusable progress bar component
+
+**Phase 8: Team Analytics**
+- Build team-level IDP gap analysis view using `team_idp_gaps` view
 - Aggregate statistics across team
 
 **Phase 9: Recommendations**
@@ -1165,29 +1202,33 @@ Phase 3: feedback_input ──────────────┘           
                         Phase 8: pdf_export
 ```
 
-### Phase 1: Player IDPs
+### Phase 1: Player IDPs ✅ COMPLETE
 
 **Goal:** Replace `players.target_1/2/3` with proper IDP tracking system.
 
 **Deliverables:**
-- Create `player_idps` table
-- Remove `target_1`, `target_2`, `target_3` columns from `players` table (fresh DB, no data to migrate)
-- Build UI for managing player IDPs (add/edit/end)
-- Enforce "at least 1 IDP" rule in UI
+- ✅ Create `player_idps` table
+- ✅ Remove `target_1`, `target_2`, `target_3` columns from `players` table
+- ✅ Build UI for managing player IDPs (add/edit/end)
+- ✅ Update all frontend components to use new IDP system
+- ✅ Update AI coach route to use new IDP format
 
 **Why first?** Training events JOIN on `player_idps` to filter by active IDPs. Without this table, the entire tracking system cannot function.
 
 ---
 
-### Phase 2: Session Block Tagging
+### Phase 2: Session Block Tagging ✅ COMPLETE
 
 **Goal:** Tag session blocks with the attributes they train.
 
 **Deliverables:**
-- Create `session_block_attributes` table
+- Create `session_block_attributes` table (with `order_type` column for first/second order distinction)
 - Build manual tagging UI on block create/edit screen
-- Integrate LLM auto-suggestion (first-order/second-order prompting)
-- Coach accept/modify flow for LLM suggestions
+  - Tabbed interface (Details / Attributes) in BlockEditorModal
+  - First-order and second-order attribute sections (up to 3 each)
+  - Dropdown selector grouped by category (Technical, Physical, Mental, Goalkeeping)
+  - Relevance slider (0.0-1.0) with info tooltips
+- *(Deferred)* LLM auto-suggestion integration - will be added later as enhancement
 
 **Why second?** Can be built independently since blocks already exist. Required for training event generation.
 
@@ -1195,7 +1236,7 @@ Phase 3: feedback_input ──────────────┘           
 
 ### Phase 3: Feedback System (Input)
 
-**Goal:** Allow coaches to submit post-session feedback.
+**Goal:** Allow coaches to submit post-session feedback and mark attendance.
 
 **Deliverables:**
 - Create `session_feedback` table
@@ -1203,7 +1244,7 @@ Phase 3: feedback_input ──────────────┘           
 - Build feedback UI integrated into session view
 - Text input for team-level feedback
 - Text input for player-specific notes
-- Attendance confirmation (using existing `session_attendance` table)
+- Build attendance UI for marking player attendance (table `session_attendance` already exists in schema)
 
 **Deferred:** Voice recording (add in later iteration)
 
@@ -1287,33 +1328,33 @@ Phase 3: feedback_input ──────────────┘           
 
 ### Phase Summary Table
 
-| Phase | Focus | Key Tables/Features | Dependencies |
-|-------|-------|---------------------|--------------|
-| 1 | Player IDPs | `player_idps`, IDP management UI | None |
-| 2 | Block Tagging | `session_block_attributes`, LLM auto-tag | None |
-| 3 | Feedback Input | `session_feedback`, `player_feedback_notes` | None |
-| 4 | Training Events | `player_training_events`, generation RPC | 1, 2, 3 |
-| 5 | Feedback Analysis | `feedback_insights`, LLM extraction | 3 |
-| 6 | Analytics | Progress views, dashboards | 4, 5 |
-| 7 | Recommendations | IDP gap analysis, block suggestions | 6 |
-| 8 | PDF Export | Report generation | 6 |
+| Phase | Focus | Key Tables/Features | Dependencies | Status |
+|-------|-------|---------------------|--------------|--------|
+| 1 | Player IDPs | `player_idps`, IDP management UI | None | ✅ COMPLETE |
+| 2 | Block Tagging | `session_block_attributes`, manual tagging UI | None | ✅ COMPLETE |
+| 3 | Feedback Input | `session_feedback`, `player_feedback_notes`, attendance UI | None | ✅ COMPLETE |
+| 4 | Training Events | `player_training_events`, generation RPC | 1, 2, 3 | ✅ COMPLETE |
+| 5 | Feedback Analysis | `feedback_insights`, LLM extraction | 3 | |
+| 6 | Team Analytics | `team_idp_gaps` view, aggregate statistics | 4 | |
+| 7 | Player Analytics | Progress dashboards, session history | 4 | ✅ COMPLETE |
+| 8 | Recommendations | IDP gap analysis, block suggestions | 6 | |
+| 9 | PDF Export | Report generation | 7 | |
 
 ---
 
-### Parallel Work Opportunities
+### MVP+ Scope ✅ ACHIEVED
 
-Some phases can be worked on simultaneously:
+The core system (Phases 1-4, 7) is now complete:
+- ✅ IDP tracking per player (with historical records)
+- ✅ Tagged session blocks (manual tagging with first/second order)
+- ✅ Post-session feedback (attendance, team feedback, player notes)
+- ✅ Training event accumulation (auto-generated on feedback save)
+- ✅ Player analytics dashboard (IDP progress, trends, session history)
 
-- **Phases 1, 2, 3** can all be built in parallel (no dependencies on each other)
-- **Phases 4 and 5** can be built in parallel (both depend on Phase 3)
-- **Phases 7 and 8** can be built in parallel (both depend on Phase 6)
+**Next Steps:**
+- **Phase 6: Team Analytics** - Team-level IDP gap analysis using `team_idp_gaps` view
+- **Phase 8: Recommendations** - Session planning integration, block suggestions
+- **Phase 9: PDF Export** - Player development reports
 
-### MVP Scope
-
-For a minimal viable product, complete **Phases 1-4**. This gives you:
-- IDP tracking per player
-- Tagged session blocks
-- Post-session feedback
-- Training event accumulation
-
-Analytics (Phase 6) and Recommendations (Phase 7) can follow. PDF export (Phase 8) and LLM feedback analysis (Phase 5) are nice-to-haves that enhance the core system.
+**Optional Enhancements:**
+- Phase 5: LLM feedback analysis (extract structured insights from feedback text)

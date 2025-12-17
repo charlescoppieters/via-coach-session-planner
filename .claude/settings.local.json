@@ -5,7 +5,8 @@
       "Bash(git config:*)",
       "WebFetch(domain:docs.stripe.com)",
       "Bash(ls:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []

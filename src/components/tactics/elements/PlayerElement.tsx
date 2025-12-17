@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Circle, Text, Group } from 'react-konva';
-import { PLAYER_RADIUS, TEAM_COLORS, type PlayerElement as PlayerElementType } from '../types';
+import { PLAYER_RADIUS, type PlayerElement as PlayerElementType } from '../types';
 
 interface PlayerElementProps {
   element: PlayerElementType;
@@ -19,7 +19,6 @@ export const PlayerElement: React.FC<PlayerElementProps> = ({
   onDragEnd,
   draggable,
 }) => {
-  const fillColor = TEAM_COLORS[element.team];
 
   return (
     <Group
@@ -45,7 +44,7 @@ export const PlayerElement: React.FC<PlayerElementProps> = ({
       {/* Player circle */}
       <Circle
         radius={PLAYER_RADIUS}
-        fill={fillColor}
+        fill={element.color}
         stroke="#FFFFFF"
         strokeWidth={2}
         shadowColor="black"

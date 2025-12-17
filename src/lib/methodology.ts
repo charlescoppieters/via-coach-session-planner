@@ -1,5 +1,12 @@
 import { createClient } from '@/lib/supabase/client'
 import type { Json } from '@/types/database'
+import type {
+  PlayingZone,
+  PlayingMethodologyZones,
+  ZoneState,
+  PositionalProfileAttributes,
+} from '@/types/database'
+import { isPlayingMethodologyZonesV2, isPositionalProfileAttributesV2 } from '@/types/database'
 
 const supabase = createClient()
 
@@ -39,12 +46,15 @@ export interface PositionalProfile {
   team_id: string | null
   position_key: string
   custom_position_name: string | null
-  attributes: string[] | null
+  attributes: PositionalProfileAttributes | string[] | null // v2 object or v1 array for backwards compat
   is_active: boolean | null
   display_order: number | null
   created_at: string
   updated_at: string
 }
+
+// Re-export PositionalProfileAttributes for convenience
+export type { PositionalProfileAttributes }
 
 export interface SystemDefault {
   id: string
@@ -323,7 +333,7 @@ export async function getClubPositionalProfiles(
 export async function createPositionalProfile(
   clubId: string,
   positionKey: string,
-  attributes: string[] = [],
+  attributes?: PositionalProfileAttributes | string[],
   teamId: string | null = null,
   customPositionName: string | null = null
 ): Promise<{ data: PositionalProfile | null; error: string | null }> {
@@ -345,6 +355,23 @@ export async function createPositionalProfile(
 
   const nextOrder = existing && existing.length > 0 ? (existing[0].display_order ?? 0) + 1 : 0
 
+  // If no attributes provided, start with empty arrays
+  let finalAttributes: PositionalProfileAttributes
+  if (!attributes) {
+    finalAttributes = {
+      in_possession: [],
+      out_of_possession: [],
+    }
+  } else if (Array.isArray(attributes)) {
+    // Legacy v1 format - convert to v2
+    finalAttributes = {
+      in_possession: attributes.slice(0, 5),
+      out_of_possession: [],
+    }
+  } else {
+    finalAttributes = attributes
+  }
+
   const { data, error } = await supabase
     .from('positional_profiles')
     .insert({
@@ -352,7 +379,7 @@ export async function createPositionalProfile(
       team_id: teamId,
       position_key: positionKey,
       custom_position_name: customPositionName,
-      attributes,
+      attributes: finalAttributes as unknown as Json,
       display_order: nextOrder,
       is_active: true,
     })
@@ -369,11 +396,32 @@ export async function createPositionalProfile(
 
 export async function updatePositionalProfile(
   id: string,
-  updates: { attributes?: string[]; is_active?: boolean; display_order?: number }
+  updates: { attributes?: PositionalProfileAttributes | string[]; is_active?: boolean; display_order?: number }
 ): Promise<{ error: string | null }> {
+  // Normalize attributes to v2 format if provided
+  const normalizedUpdates: { attributes?: Json; is_active?: boolean; display_order?: number } = {}
+
+  if (updates.is_active !== undefined) {
+    normalizedUpdates.is_active = updates.is_active
+  }
+  if (updates.display_order !== undefined) {
+    normalizedUpdates.display_order = updates.display_order
+  }
+  if (updates.attributes !== undefined) {
+    // Handle both v1 and v2 formats
+    if (Array.isArray(updates.attributes)) {
+      normalizedUpdates.attributes = {
+        in_possession: updates.attributes.slice(0, 5),
+        out_of_possession: [],
+      } as unknown as Json
+    } else {
+      normalizedUpdates.attributes = updates.attributes as unknown as Json
+    }
+  }
+
   const { error } = await supabase
     .from('positional_profiles')
-    .update(updates)
+    .update(normalizedUpdates)
     .eq('id', id)
 
   if (error) {
@@ -402,8 +450,24 @@ export async function deletePositionalProfile(id: string): Promise<{ error: stri
 // System Defaults Operations
 // ========================================
 
+// Attribute category types
+export type AttributeCategory =
+  | 'attributes' // legacy
+  | 'attributes_in_possession'
+  | 'attributes_out_of_possession'
+  | 'attributes_physical'
+  | 'attributes_psychological'
+  | 'position_attributes_in_possession'
+  | 'position_attributes_out_of_possession'
+
+export type SystemDefaultCategory =
+  | 'positions'
+  | 'equipment'
+  | 'space_options'
+  | AttributeCategory
+
 export async function getSystemDefaults(
-  category: 'positions' | 'attributes' | 'equipment' | 'space_options'
+  category: SystemDefaultCategory
 ): Promise<{ data: SystemDefault[] | null; error: string | null }> {
   const { data, error } = await supabase
     .from('system_defaults')
@@ -418,6 +482,110 @@ export async function getSystemDefaults(
   }
 
   return { data: data as unknown as SystemDefault[], error: null }
+}
+
+/**
+ * Get all in-possession attributes (combines in_possession + physical + psychological)
+ */
+export async function getInPossessionAttributes(): Promise<{ data: SystemDefault[] | null; error: string | null }> {
+  const [inPoss, physical, psychological] = await Promise.all([
+    getSystemDefaults('attributes_in_possession'),
+    getSystemDefaults('attributes_physical'),
+    getSystemDefaults('attributes_psychological'),
+  ])
+
+  if (inPoss.error || physical.error || psychological.error) {
+    return { data: null, error: inPoss.error || physical.error || psychological.error }
+  }
+
+  const combined = [
+    ...(inPoss.data || []),
+    ...(physical.data || []),
+    ...(psychological.data || []),
+  ]
+
+  return { data: combined, error: null }
+}
+
+/**
+ * Get all out-of-possession attributes (combines out_of_possession + physical + psychological)
+ */
+export async function getOutOfPossessionAttributes(): Promise<{ data: SystemDefault[] | null; error: string | null }> {
+  const [outPoss, physical, psychological] = await Promise.all([
+    getSystemDefaults('attributes_out_of_possession'),
+    getSystemDefaults('attributes_physical'),
+    getSystemDefaults('attributes_psychological'),
+  ])
+
+  if (outPoss.error || physical.error || psychological.error) {
+    return { data: null, error: outPoss.error || physical.error || psychological.error }
+  }
+
+  const combined = [
+    ...(outPoss.data || []),
+    ...(physical.data || []),
+    ...(psychological.data || []),
+  ]
+
+  return { data: combined, error: null }
+}
+
+/**
+ * Get position-specific default attributes for a given position key
+ */
+export async function getPositionDefaultAttributes(
+  positionKey: string
+): Promise<{ inPossession: string[]; outOfPossession: string[] }> {
+  const [inPossDefaults, outPossDefaults] = await Promise.all([
+    getSystemDefaults('position_attributes_in_possession'),
+    getSystemDefaults('position_attributes_out_of_possession'),
+  ])
+
+  let inPossession: string[] = []
+  let outOfPossession: string[] = []
+
+  // Find position-specific defaults
+  // The value type is dynamic - position_attributes_* have { position, attributes } structure
+  const inPossMatch = inPossDefaults.data?.find(d => d.key === positionKey)
+  const inPossValue = inPossMatch?.value as { position?: string; attributes?: string[] } | undefined
+  if (inPossValue?.attributes) {
+    inPossession = inPossValue.attributes.slice(0, 5)
+  }
+
+  const outPossMatch = outPossDefaults.data?.find(d => d.key === positionKey)
+  const outPossValue = outPossMatch?.value as { position?: string; attributes?: string[] } | undefined
+  if (outPossValue?.attributes) {
+    outOfPossession = outPossValue.attributes.slice(0, 5)
+  }
+
+  return { inPossession, outOfPossession }
+}
+
+/**
+ * Helper to normalize profile attributes to v2 format
+ * Handles backwards compatibility with v1 string[] format
+ */
+export function normalizeProfileAttributes(
+  attrs: PositionalProfileAttributes | string[] | null | undefined
+): PositionalProfileAttributes {
+  if (!attrs) {
+    return { in_possession: [], out_of_possession: [] }
+  }
+
+  // Already v2 format
+  if (isPositionalProfileAttributesV2(attrs)) {
+    return attrs
+  }
+
+  // v1 format (string array) - migrate to in_possession only
+  if (Array.isArray(attrs)) {
+    return {
+      in_possession: attrs.slice(0, 5),
+      out_of_possession: [],
+    }
+  }
+
+  return { in_possession: [], out_of_possession: [] }
 }
 
 // ========================================
@@ -503,10 +671,13 @@ export function subscribeToPositionalProfiles(
 }
 
 // ========================================
-// Playing Methodology Zones Operations
+// Playing Methodology Zones Operations (v2)
 // ========================================
 
-// PitchZone type for zones stored in playing_methodology
+// Re-export types from database.ts for convenience
+export type { PlayingZone, PlayingMethodologyZones, ZoneState }
+
+// Legacy PitchZone type for backwards compatibility (deprecated)
 export interface PitchZone {
   id: string
   x: number
@@ -518,15 +689,75 @@ export interface PitchZone {
   color?: string
 }
 
-// Extended type with zones
+// Extended type with zones (v2)
 export interface PlayingMethodologyWithZones extends PlayingMethodology {
-  zones?: PitchZone[] | null
+  zones?: PlayingMethodologyZones | null
 }
 
-// Get pitch zones for a club
-export async function getPlayingMethodologyWithZones(
+// ========================================
+// Zone Default Names and Helpers
+// ========================================
+
+const DEFAULT_ZONE_NAMES_3: Array<{ name: string }> = [
+  { name: 'Defensive Third' },
+  { name: 'Middle Third' },
+  { name: 'Attacking Third' },
+]
+
+const DEFAULT_ZONE_NAMES_4: Array<{ name: string }> = [
+  { name: 'Defensive Quarter' },
+  { name: 'Defensive-Mid Quarter' },
+  { name: 'Attacking-Mid Quarter' },
+  { name: 'Attacking Quarter' },
+]
+
+/**
+ * Create default zones structure for a given zone count
+ */
+export function createDefaultZones(zoneCount: 3 | 4): PlayingMethodologyZones {
+  const defaults = zoneCount === 3 ? DEFAULT_ZONE_NAMES_3 : DEFAULT_ZONE_NAMES_4
+
+  const zones: PlayingZone[] = defaults.map((zone, index) => ({
+    id: `zone-${index + 1}`,
+    order: index + 1,
+    name: zone.name,
+    in_possession: {
+      name: '',
+      details: '',
+    },
+    out_of_possession: {
+      name: '',
+      details: '',
+    },
+  }))
+
+  return {
+    zone_count: zoneCount,
+    zones,
+  }
+}
+
+/**
+ * Check if zones data is in the legacy (v1) format
+ */
+export function isLegacyZonesFormat(zones: unknown): zones is PitchZone[] {
+  if (!Array.isArray(zones)) return false
+  if (zones.length === 0) return false
+  const first = zones[0]
+  return (
+    typeof first === 'object' &&
+    first !== null &&
+    'x' in first &&
+    'y' in first &&
+    'width' in first &&
+    'height' in first
+  )
+}
+
+// Get pitch zones for a club (v2 format)
+export async function getClubPlayingMethodologyZones(
   clubId: string
-): Promise<{ data: { zones: PitchZone[] } | null; error: string | null }> {
+): Promise<{ data: PlayingMethodologyZones | null; error: string | null }> {
   // Get the first club-level record that has zones
   const { data, error } = await supabase
     .from('playing_methodology')
@@ -544,16 +775,100 @@ export async function getPlayingMethodologyWithZones(
   }
 
   if (!data || !data.zones) {
+    return { data: null, error: null }
+  }
+
+  // Check if it's in v2 format
+  if (isPlayingMethodologyZonesV2(data.zones)) {
+    return { data: data.zones, error: null }
+  }
+
+  // Legacy format or invalid - treat as no zones
+  return { data: null, error: null }
+}
+
+// Legacy function - deprecated, use getClubPlayingMethodologyZones
+export async function getPlayingMethodologyWithZones(
+  clubId: string
+): Promise<{ data: { zones: PitchZone[] } | null; error: string | null }> {
+  // Get the first club-level record that has zones
+  const { data, error } = await supabase
+    .from('playing_methodology')
+    .select('zones')
+    .eq('club_id', clubId)
+    .is('team_id', null)
+    .not('zones', 'is', null)
+    .limit(1)
+    .single()
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching zones:', error)
+    return { data: null, error: error.message }
+  }
+
+  if (!data || !data.zones) {
     return { data: { zones: [] }, error: null }
   }
 
-  return {
-    data: { zones: data.zones as unknown as PitchZone[] },
-    error: null,
+  // Only return if legacy format
+  if (isLegacyZonesFormat(data.zones)) {
+    return { data: { zones: data.zones }, error: null }
   }
+
+  return { data: { zones: [] }, error: null }
 }
 
-// Save pitch zones for a club
+// Save pitch zones for a club (v2 format)
+export async function saveClubPlayingMethodologyZones(
+  clubId: string,
+  coachId: string,
+  zones: PlayingMethodologyZones
+): Promise<{ error: string | null }> {
+  // First, check if any record exists for this club
+  const { data: existing } = await supabase
+    .from('playing_methodology')
+    .select('id')
+    .eq('club_id', clubId)
+    .is('team_id', null)
+    .limit(1)
+    .single()
+
+  if (existing) {
+    // Update existing record's zones
+    const { error } = await supabase
+      .from('playing_methodology')
+      .update({ zones: zones as unknown as Json })
+      .eq('id', existing.id)
+
+    if (error) {
+      console.error('Error updating zones:', error)
+      return { error: error.message }
+    }
+  } else {
+    // Create a new record with zones
+    const { error } = await supabase
+      .from('playing_methodology')
+      .insert({
+        club_id: clubId,
+        team_id: null,
+        created_by_coach_id: coachId,
+        title: 'Playing Methodology',
+        description: 'Club playing methodology with pitch zones',
+        zones: zones as unknown as Json,
+        display_order: 0,
+        is_active: true,
+      })
+
+    if (error) {
+      console.error('Error creating zones record:', error)
+      return { error: error.message }
+    }
+  }
+
+  return { error: null }
+}
+
+// Legacy function - deprecated, use saveClubPlayingMethodologyZones
 export async function savePlayingMethodologyZones(
   clubId: string,
   coachId: string,
@@ -686,6 +1001,90 @@ export async function toggleClubTrainingRule(
 // Team Playing Methodology (Zones) Operations
 // ========================================
 
+// Get team zones (v2 format)
+export async function getTeamPlayingMethodologyZones(
+  clubId: string,
+  teamId: string
+): Promise<{ data: PlayingMethodologyZones | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('playing_methodology')
+    .select('zones')
+    .eq('club_id', clubId)
+    .eq('team_id', teamId)
+    .not('zones', 'is', null)
+    .limit(1)
+    .single()
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching team zones:', error)
+    return { data: null, error: error.message }
+  }
+
+  if (!data || !data.zones) {
+    return { data: null, error: null }
+  }
+
+  // Check if it's in v2 format
+  if (isPlayingMethodologyZonesV2(data.zones)) {
+    return { data: data.zones, error: null }
+  }
+
+  // Legacy format or invalid - treat as no zones
+  return { data: null, error: null }
+}
+
+// Save team zones (v2 format)
+export async function saveTeamPlayingMethodologyZonesV2(
+  clubId: string,
+  teamId: string,
+  coachId: string,
+  zones: PlayingMethodologyZones
+): Promise<{ error: string | null }> {
+  // Check if team record exists
+  const { data: existing } = await supabase
+    .from('playing_methodology')
+    .select('id')
+    .eq('club_id', clubId)
+    .eq('team_id', teamId)
+    .limit(1)
+    .single()
+
+  if (existing) {
+    // Update existing record
+    const { error } = await supabase
+      .from('playing_methodology')
+      .update({ zones: zones as unknown as Json })
+      .eq('id', existing.id)
+
+    if (error) {
+      console.error('Error updating team zones:', error)
+      return { error: error.message }
+    }
+  } else {
+    // Create new team record
+    const { error } = await supabase
+      .from('playing_methodology')
+      .insert({
+        club_id: clubId,
+        team_id: teamId,
+        created_by_coach_id: coachId,
+        title: 'Playing Methodology',
+        description: 'Team playing methodology',
+        zones: zones as unknown as Json,
+        display_order: 0,
+        is_active: true,
+      })
+
+    if (error) {
+      console.error('Error creating team zones:', error)
+      return { error: error.message }
+    }
+  }
+
+  return { error: null }
+}
+
+// Legacy function - deprecated
 export async function getTeamPlayingMethodologyWithZones(
   clubId: string,
   teamId: string
@@ -708,12 +1107,15 @@ export async function getTeamPlayingMethodologyWithZones(
     return { data: { zones: [] }, error: null }
   }
 
-  return {
-    data: { zones: data.zones as unknown as PitchZone[] },
-    error: null,
+  // Only return if legacy format
+  if (isLegacyZonesFormat(data.zones)) {
+    return { data: { zones: data.zones }, error: null }
   }
+
+  return { data: { zones: [] }, error: null }
 }
 
+// Legacy function - deprecated
 export async function saveTeamPlayingMethodologyZones(
   clubId: string,
   teamId: string,
@@ -791,7 +1193,7 @@ export async function createTeamPositionalProfile(
   clubId: string,
   teamId: string,
   positionKey: string,
-  attributes: string[] = [],
+  attributes?: PositionalProfileAttributes | string[],
   customPositionName: string | null = null
 ): Promise<{ data: PositionalProfile | null; error: string | null }> {
   // Get the next display order for this team
@@ -805,6 +1207,23 @@ export async function createTeamPositionalProfile(
 
   const nextOrder = existing && existing.length > 0 ? (existing[0].display_order ?? 0) + 1 : 0
 
+  // If no attributes provided, start with empty arrays
+  let finalAttributes: PositionalProfileAttributes
+  if (!attributes) {
+    finalAttributes = {
+      in_possession: [],
+      out_of_possession: [],
+    }
+  } else if (Array.isArray(attributes)) {
+    // Legacy v1 format - convert to v2
+    finalAttributes = {
+      in_possession: attributes.slice(0, 5),
+      out_of_possession: [],
+    }
+  } else {
+    finalAttributes = attributes
+  }
+
   const { data, error } = await supabase
     .from('positional_profiles')
     .insert({
@@ -812,7 +1231,7 @@ export async function createTeamPositionalProfile(
       team_id: teamId,
       position_key: positionKey,
       custom_position_name: customPositionName,
-      attributes,
+      attributes: finalAttributes as unknown as Json,
       display_order: nextOrder,
       is_active: true,
     })

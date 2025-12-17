@@ -8,14 +8,23 @@ import { CgSpinnerAlt } from 'react-icons/cg'
 import { theme } from '@/styles/theme'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTeam } from '@/contexts/TeamContext'
-import { getPlayers, createPlayer } from '@/lib/players'
-import { getClubPositionalProfiles, getSystemDefaults, type PositionalProfile, type SystemDefault } from '@/lib/methodology'
+import { getPlayers, createPlayer, createPlayerIDPs } from '@/lib/players'
+import {
+  getClubPositionalProfiles,
+  getSystemDefaults,
+  getInPossessionAttributes,
+  getOutOfPossessionAttributes,
+  type PositionalProfile,
+  type SystemDefault,
+} from '@/lib/methodology'
 import type { Player } from '@/types/database'
+import { isPositionalProfileAttributesV2 } from '@/types/database'
 
 interface PositionOption {
   key: string
   name: string
-  attributes: string[]
+  inPossessionAttrs: string[]
+  outOfPossessionAttrs: string[]
 }
 
 const OTHER_OPTION = '__other__'
@@ -33,8 +42,9 @@ export default function PlayersPage() {
 
   // Positions from positional profiles (with attributes)
   const [positions, setPositions] = useState<PositionOption[]>([])
-  // System defaults for attributes (to map keys to display names)
-  const [systemAttributes, setSystemAttributes] = useState<SystemDefault[]>([])
+  // Attributes for IDP selection
+  const [inPossessionAttributes, setInPossessionAttributes] = useState<SystemDefault[]>([])
+  const [outOfPossessionAttributes, setOutOfPossessionAttributes] = useState<SystemDefault[]>([])
 
   // Add player modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
@@ -42,16 +52,8 @@ export default function PlayersPage() {
   const [newPlayerPosition, setNewPlayerPosition] = useState('')
   const [newPlayerAge, setNewPlayerAge] = useState('')
   const [newPlayerGender, setNewPlayerGender] = useState('')
-  const [newPlayerTarget1, setNewPlayerTarget1] = useState('')
-  const [newPlayerTarget2, setNewPlayerTarget2] = useState('')
-  const [newPlayerTarget3, setNewPlayerTarget3] = useState('')
-  const [customTarget1, setCustomTarget1] = useState('')
-  const [customTarget2, setCustomTarget2] = useState('')
-  const [customTarget3, setCustomTarget3] = useState('')
+  const [selectedIDPs, setSelectedIDPs] = useState<Array<{ attribute_key: string; priority: number }>>([])
   const [isSaving, setIsSaving] = useState(false)
-
-  // Get attributes for selected position
-  const selectedPositionAttributes = positions.find(p => p.name === newPlayerPosition)?.attributes || []
 
   const fetchPlayers = useCallback(async () => {
     if (!club?.id || !selectedTeamId) return
@@ -84,8 +86,13 @@ export default function PlayersPage() {
 
   // Helper to get attribute display name from key
   const getAttributeName = (key: string): string => {
-    const attr = systemAttributes.find((a) => a.key === key)
-    return attr?.value?.name || key
+    const inPossAttr = inPossessionAttributes.find((a) => a.key === key)
+    if (inPossAttr) return inPossAttr.value?.name || key
+
+    const outPossAttr = outOfPossessionAttributes.find((a) => a.key === key)
+    if (outPossAttr) return outPossAttr.value?.name || key
+
+    return key
   }
 
   // Fetch positions from positional profiles
@@ -93,19 +100,22 @@ export default function PlayersPage() {
     if (!club?.id) return
 
     // Get club positional profiles and system defaults in parallel
-    const [profilesRes, positionsRes, attributesRes] = await Promise.all([
+    const [profilesRes, positionsRes, inPossRes, outPossRes] = await Promise.all([
       getClubPositionalProfiles(club.id),
       getSystemDefaults('positions'),
-      getSystemDefaults('attributes'),
+      getInPossessionAttributes(),
+      getOutOfPossessionAttributes(),
     ])
 
     const profiles = profilesRes.data
     const systemPositions = positionsRes.data
-    const sysAttributes = attributesRes.data
 
-    // Store system attributes for display name lookups
-    if (sysAttributes) {
-      setSystemAttributes(sysAttributes)
+    // Store attributes for IDP selection
+    if (inPossRes.data) {
+      setInPossessionAttributes(inPossRes.data)
+    }
+    if (outPossRes.data) {
+      setOutOfPossessionAttributes(outPossRes.data)
     }
 
     if (profiles && systemPositions) {
@@ -118,11 +128,26 @@ export default function PlayersPage() {
       // Map profiles to position options (including attributes as keys)
       const positionOptions: PositionOption[] = profiles
         .filter((profile: PositionalProfile) => profile.is_active)
-        .map((profile: PositionalProfile) => ({
-          key: profile.position_key,
-          name: profile.custom_position_name || positionMap.get(profile.position_key) || profile.position_key,
-          attributes: profile.attributes || [],
-        }))
+        .map((profile: PositionalProfile) => {
+          // Handle v2 attribute structure
+          let inPoss: string[] = []
+          let outPoss: string[] = []
+
+          if (isPositionalProfileAttributesV2(profile.attributes)) {
+            inPoss = profile.attributes.in_possession || []
+            outPoss = profile.attributes.out_of_possession || []
+          } else if (Array.isArray(profile.attributes)) {
+            // Legacy v1: put all in in_possession
+            inPoss = profile.attributes
+          }
+
+          return {
+            key: profile.position_key,
+            name: profile.custom_position_name || positionMap.get(profile.position_key) || profile.position_key,
+            inPossessionAttrs: inPoss,
+            outOfPossessionAttrs: outPoss,
+          }
+        })
 
       setPositions(positionOptions)
     }
@@ -148,15 +173,22 @@ export default function PlayersPage() {
     }
   }, [searchQuery, players])
 
-  // Helper to get final IDP value (handles "Other" option)
-  // Converts attribute keys to display names for storage
-  const getTargetValue = (selected: string, custom: string): string | null => {
-    if (selected === OTHER_OPTION) {
-      return custom.trim() || null
-    }
-    if (!selected) return null
-    // Convert key to display name for storage
-    return getAttributeName(selected)
+  // IDP management functions
+  const handleAddIDP = (attributeKey: string) => {
+    if (selectedIDPs.length >= 3) return
+    if (selectedIDPs.find(idp => idp.attribute_key === attributeKey)) return
+
+    setSelectedIDPs([...selectedIDPs, {
+      attribute_key: attributeKey,
+      priority: selectedIDPs.length + 1
+    }])
+  }
+
+  const handleRemoveIDP = (attributeKey: string) => {
+    const newIDPs = selectedIDPs
+      .filter(idp => idp.attribute_key !== attributeKey)
+      .map((idp, idx) => ({ ...idp, priority: idx + 1 }))
+    setSelectedIDPs(newIDPs)
   }
 
   // Open modal with auto-filled values
@@ -167,12 +199,7 @@ export default function PlayersPage() {
     // For Co-Ed teams, leave gender blank so coach can pick per player
     const teamGender = selectedTeam?.gender
     setNewPlayerGender(teamGender === 'Male' || teamGender === 'Female' ? teamGender : '')
-    setNewPlayerTarget1('')
-    setNewPlayerTarget2('')
-    setNewPlayerTarget3('')
-    setCustomTarget1('')
-    setCustomTarget2('')
-    setCustomTarget3('')
+    setSelectedIDPs([])
     setIsAddModalOpen(true)
   }
 
@@ -180,12 +207,7 @@ export default function PlayersPage() {
   const handlePositionChange = (newPosition: string) => {
     setNewPlayerPosition(newPosition)
     // Clear IDPs when position changes since attributes are different
-    setNewPlayerTarget1('')
-    setNewPlayerTarget2('')
-    setNewPlayerTarget3('')
-    setCustomTarget1('')
-    setCustomTarget2('')
-    setCustomTarget3('')
+    setSelectedIDPs([])
   }
 
   const handleAddPlayer = async () => {
@@ -201,15 +223,17 @@ export default function PlayersPage() {
       position: newPlayerPosition.trim() || null,
       age: newPlayerAge ? parseInt(newPlayerAge) : null,
       gender: newPlayerGender || null,
-      target_1: getTargetValue(newPlayerTarget1, customTarget1),
-      target_2: getTargetValue(newPlayerTarget2, customTarget2),
-      target_3: getTargetValue(newPlayerTarget3, customTarget3),
     })
 
     if (error) {
       setError('Failed to add player')
       console.error('Error creating player:', error)
     } else if (data) {
+      // Create IDPs for the new player
+      if (selectedIDPs.length > 0) {
+        await createPlayerIDPs(data.id, selectedIDPs)
+      }
+
       await fetchPlayers()
       setIsAddModalOpen(false)
       // Navigate to the new player's detail page
@@ -217,14 +241,6 @@ export default function PlayersPage() {
     }
 
     setIsSaving(false)
-  }
-
-  const getIdpCount = (player: Player): number => {
-    let count = 0
-    if (player.target_1) count++
-    if (player.target_2) count++
-    if (player.target_3) count++
-    return count
   }
 
   // Shared styles for modal form elements
@@ -395,7 +411,8 @@ export default function PlayersPage() {
           </div>
         ) : (
           filteredPlayers.map((player) => {
-            const idpCount = getIdpCount(player)
+            // Note: IDP count now requires separate fetch from player_idps table
+            // For list view, we'll show "View" to encourage clicking for full details
             return (
               <div
                 key={player.id}
@@ -466,17 +483,13 @@ export default function PlayersPage() {
                     alignItems: 'center',
                     gap: theme.spacing.xs,
                     padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
-                    backgroundColor: idpCount > 0
-                      ? 'rgba(239, 191, 4, 0.1)'
-                      : theme.colors.background.tertiary,
+                    backgroundColor: theme.colors.background.tertiary,
                     borderRadius: theme.borderRadius.md,
-                    color: idpCount > 0
-                      ? theme.colors.gold.main
-                      : theme.colors.text.muted,
+                    color: theme.colors.text.muted,
                     fontSize: theme.typography.fontSize.sm,
                   }}
                 >
-                  {idpCount}/3 IDP
+                  View IDPs →
                 </div>
               </div>
             )
@@ -631,100 +644,140 @@ export default function PlayersPage() {
                 Individual Development Plan (IDP)
               </h3>
 
-              {selectedPositionAttributes.length === 0 ? (
-                <p style={{ fontSize: theme.typography.fontSize.sm, color: theme.colors.text.muted, fontStyle: 'italic' }}>
-                  No attributes defined for this position. Add attributes in Club Methodology &gt; Positional Profiling.
-                </p>
-              ) : (
-                <>
-                  {/* Target 1 */}
-                  <div style={{ marginBottom: theme.spacing.md }}>
-                    <label style={labelStyle}>Target 1</label>
-                    <select
-                      value={newPlayerTarget1}
-                      onChange={(e) => setNewPlayerTarget1(e.target.value)}
-                      style={selectStyle}
-                      onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                      onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                    >
-                      <option value="">Select target...</option>
-                      {selectedPositionAttributes.map((attr) => (
-                        <option key={attr} value={attr}>{getAttributeName(attr)}</option>
-                      ))}
-                      <option value={OTHER_OPTION}>Other (custom)</option>
-                    </select>
-                    {newPlayerTarget1 === OTHER_OPTION && (
-                      <input
-                        type="text"
-                        value={customTarget1}
-                        onChange={(e) => setCustomTarget1(e.target.value)}
-                        placeholder="Enter custom target..."
-                        style={{ ...inputStyle, marginTop: theme.spacing.sm }}
-                        onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                        onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                      />
-                    )}
-                  </div>
+              {(() => {
+                // Find the selected position and get its attributes
+                const selectedPosition = positions.find(p => p.name === newPlayerPosition)
+                const positionInPossAttrs = selectedPosition?.inPossessionAttrs || []
+                const positionOutPossAttrs = selectedPosition?.outOfPossessionAttrs || []
+                const totalAttrs = positionInPossAttrs.length + positionOutPossAttrs.length
 
-                  {/* Target 2 */}
-                  <div style={{ marginBottom: theme.spacing.md }}>
-                    <label style={labelStyle}>Target 2</label>
-                    <select
-                      value={newPlayerTarget2}
-                      onChange={(e) => setNewPlayerTarget2(e.target.value)}
-                      style={selectStyle}
-                      onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                      onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
+                if (totalAttrs === 0) {
+                  return (
+                    <p style={{ fontSize: theme.typography.fontSize.sm, color: theme.colors.text.muted, fontStyle: 'italic' }}>
+                      No attributes defined for this position. Add attributes in Club Methodology &gt; Positional Profiling.
+                    </p>
+                  )
+                }
+                return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.sm }}>
+                {/* Selected IDPs */}
+                {selectedIDPs.map((idp, index) => (
+                  <div
+                    key={idp.attribute_key}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: theme.spacing.md,
+                      padding: theme.spacing.md,
+                      backgroundColor: theme.colors.background.primary,
+                      borderRadius: theme.borderRadius.md,
+                      border: `1px solid ${theme.colors.border.primary}`,
+                    }}
+                  >
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      backgroundColor: theme.colors.gold.main,
+                      color: theme.colors.background.primary,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: theme.typography.fontWeight.bold,
+                      fontSize: theme.typography.fontSize.sm,
+                      flexShrink: 0,
+                    }}>
+                      {index + 1}
+                    </div>
+                    <div style={{ flex: 1, color: theme.colors.text.primary }}>
+                      {getAttributeName(idp.attribute_key)}
+                    </div>
+                    <button
+                      onClick={() => handleRemoveIDP(idp.attribute_key)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: theme.colors.status.error,
+                        cursor: 'pointer',
+                        fontSize: theme.typography.fontSize.lg,
+                        padding: theme.spacing.xs,
+                      }}
                     >
-                      <option value="">Select target...</option>
-                      {selectedPositionAttributes.map((attr) => (
-                        <option key={attr} value={attr}>{getAttributeName(attr)}</option>
-                      ))}
-                      <option value={OTHER_OPTION}>Other (custom)</option>
-                    </select>
-                    {newPlayerTarget2 === OTHER_OPTION && (
-                      <input
-                        type="text"
-                        value={customTarget2}
-                        onChange={(e) => setCustomTarget2(e.target.value)}
-                        placeholder="Enter custom target..."
-                        style={{ ...inputStyle, marginTop: theme.spacing.sm }}
-                        onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                        onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                      />
-                    )}
+                      ×
+                    </button>
                   </div>
+                ))}
 
-                  {/* Target 3 */}
-                  <div style={{ marginBottom: theme.spacing.md }}>
-                    <label style={labelStyle}>Target 3</label>
-                    <select
-                      value={newPlayerTarget3}
-                      onChange={(e) => setNewPlayerTarget3(e.target.value)}
-                      style={selectStyle}
-                      onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                      onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                    >
-                      <option value="">Select target...</option>
-                      {selectedPositionAttributes.map((attr) => (
-                        <option key={attr} value={attr}>{getAttributeName(attr)}</option>
-                      ))}
-                      <option value={OTHER_OPTION}>Other (custom)</option>
-                    </select>
-                    {newPlayerTarget3 === OTHER_OPTION && (
-                      <input
-                        type="text"
-                        value={customTarget3}
-                        onChange={(e) => setCustomTarget3(e.target.value)}
-                        placeholder="Enter custom target..."
-                        style={{ ...inputStyle, marginTop: theme.spacing.sm }}
-                        onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
-                        onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
-                      />
-                    )}
+                {/* Add IDP Dropdown */}
+                {selectedIDPs.length < 3 && (
+                  <div>
+                    {(() => {
+                      // Get available in-possession attributes for this position
+                      const availableInPoss = inPossessionAttributes
+                        .filter(attr => positionInPossAttrs.includes(attr.key))
+                        .filter(attr => !selectedIDPs.find(idp => idp.attribute_key === attr.key))
+
+                      // Get available out-of-possession attributes for this position
+                      const availableOutPoss = outOfPossessionAttributes
+                        .filter(attr => positionOutPossAttrs.includes(attr.key))
+                        .filter(attr => !selectedIDPs.find(idp => idp.attribute_key === attr.key))
+
+                      const totalAvailable = availableInPoss.length + availableOutPoss.length
+
+                      return (
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleAddIDP(e.target.value)
+                            }
+                          }}
+                          disabled={totalAvailable === 0}
+                          style={{
+                            ...selectStyle,
+                            opacity: totalAvailable === 0 ? 0.5 : 1,
+                            cursor: totalAvailable === 0 ? 'not-allowed' : 'pointer',
+                          }}
+                          onFocus={(e) => { e.target.style.borderColor = theme.colors.gold.main }}
+                          onBlur={(e) => { e.target.style.borderColor = theme.colors.border.primary }}
+                        >
+                          <option value="">
+                            {totalAvailable === 0
+                              ? 'All position attributes selected'
+                              : `+ Add Development Target (${3 - selectedIDPs.length} remaining)`}
+                          </option>
+                          {availableInPoss.length > 0 && (
+                            <optgroup label="In Possession">
+                              {availableInPoss.map(attr => (
+                                <option key={attr.key} value={attr.key}>
+                                  {attr.value?.name || attr.key}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {availableOutPoss.length > 0 && (
+                            <optgroup label="Out of Possession">
+                              {availableOutPoss.map(attr => (
+                                <option key={attr.key} value={attr.key}>
+                                  {attr.value?.name || attr.key}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      )
+                    })()}
                   </div>
-                </>
-              )}
+                )}
+
+                {selectedIDPs.length === 0 && (
+                  <p style={{ fontSize: theme.typography.fontSize.sm, color: theme.colors.text.muted, fontStyle: 'italic' }}>
+                    Select up to 3 development targets for this player
+                  </p>
+                )}
+              </div>
+                )
+              })()}
             </div>
             )}
 

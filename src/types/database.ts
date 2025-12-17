@@ -212,9 +212,6 @@ export type Database = {
           id: string
           name: string
           position: string | null
-          target_1: string | null
-          target_2: string | null
-          target_3: string | null
           team_id: string
           updated_at: string
         }
@@ -226,9 +223,6 @@ export type Database = {
           id?: string
           name: string
           position?: string | null
-          target_1?: string | null
-          target_2?: string | null
-          target_3?: string | null
           team_id: string
           updated_at?: string
         }
@@ -240,9 +234,6 @@ export type Database = {
           id?: string
           name?: string
           position?: string | null
-          target_1?: string | null
-          target_2?: string | null
-          target_3?: string | null
           team_id?: string
           updated_at?: string
         }
@@ -259,6 +250,50 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_idps: {
+        Row: {
+          id: string
+          player_id: string
+          attribute_key: string
+          priority: number
+          notes: string | null
+          started_at: string
+          ended_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          player_id: string
+          attribute_key: string
+          priority?: number
+          notes?: string | null
+          started_at?: string
+          ended_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          player_id?: string
+          attribute_key?: string
+          priority?: number
+          notes?: string | null
+          started_at?: string
+          ended_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_idps_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -470,6 +505,147 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_feedback: {
+        Row: {
+          id: string
+          session_id: string
+          coach_id: string
+          team_feedback: string | null
+          audio_url: string | null
+          transcript: string | null
+          overall_rating: number | null
+          processed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          session_id: string
+          coach_id: string
+          team_feedback?: string | null
+          audio_url?: string | null
+          transcript?: string | null
+          overall_rating?: number | null
+          processed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          session_id?: string
+          coach_id?: string
+          team_feedback?: string | null
+          audio_url?: string | null
+          transcript?: string | null
+          overall_rating?: number | null
+          processed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_feedback_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_feedback_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_feedback_notes: {
+        Row: {
+          id: string
+          session_feedback_id: string
+          player_id: string
+          note: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          session_feedback_id: string
+          player_id: string
+          note: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          session_feedback_id?: string
+          player_id?: string
+          note?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_feedback_notes_session_feedback_id_fkey"
+            columns: ["session_feedback_id"]
+            isOneToOne: false
+            referencedRelation: "session_feedback"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_feedback_notes_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feedback_insights: {
+        Row: {
+          id: string
+          session_feedback_id: string
+          player_id: string | null
+          attribute_key: string | null
+          sentiment: string | null
+          confidence: number | null
+          extracted_text: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          session_feedback_id: string
+          player_id?: string | null
+          attribute_key?: string | null
+          sentiment?: string | null
+          confidence?: number | null
+          extracted_text?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          session_feedback_id?: string
+          player_id?: string | null
+          attribute_key?: string | null
+          sentiment?: string | null
+          confidence?: number | null
+          extracted_text?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_insights_session_feedback_id_fkey"
+            columns: ["session_feedback_id"]
+            isOneToOne: false
+            referencedRelation: "session_feedback"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_insights_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -955,6 +1131,118 @@ export type Database = {
         Args: { new_role: string; target_membership_id: string }
         Returns: Json
       }
+      update_player_idps: {
+        Args: { p_player_id: string; p_new_idps: Json }
+        Returns: undefined
+      }
+      generate_training_events: {
+        Args: { p_session_id: string }
+        Returns: number
+      }
+      get_accidental_idps: {
+        Args: { p_player_id: string }
+        Returns: { idp_id: string; attribute_key: string; duration_hours: number }[]
+      }
+      insert_feedback_insights: {
+        Args: { p_session_feedback_id: string; p_insights: Json }
+        Returns: number
+      }
+      get_team_training_summary: {
+        Args: { p_team_id: string; p_start_date?: string | null; p_end_date?: string | null }
+        Returns: {
+          team_id: string
+          sessions_completed: number
+          total_training_minutes: number
+          total_players: number
+          active_idps: number
+          unique_idp_attributes: number
+          attributes_trained: number
+          idp_coverage_rate: number
+          avg_attendance_percentage: number
+        }[]
+      }
+      get_team_attribute_breakdown: {
+        Args: { p_team_id: string; p_start_date?: string | null; p_end_date?: string | null }
+        Returns: {
+          category: string
+          category_display_name: string
+          total_opportunities: number
+          attribute_count: number
+          attributes: Json
+        }[]
+      }
+      get_team_idp_gaps: {
+        Args: { p_team_id: string; p_start_date?: string | null; p_end_date?: string | null }
+        Returns: {
+          attribute_key: string
+          attribute_name: string
+          players_with_idp: number
+          players_trained: number
+          last_trained_date: string | null
+          days_since_trained: number
+          sessions_since_trained: number
+          total_sessions: number
+          player_ids: string[]
+          player_names: string[]
+          gap_status: string
+          training_sessions: Array<{
+            session_id: string
+            session_name: string
+            session_date: string
+          }> | null
+        }[]
+      }
+      get_team_training_trend: {
+        Args: { p_team_id: string; p_weeks?: number }
+        Returns: {
+          week_start: string
+          week_label: string
+          sessions_count: number
+          total_opportunities: number
+          avg_attendance: number
+        }[]
+      }
+      get_team_session_block_usage: {
+        Args: { p_team_id: string; p_start_date?: string | null; p_end_date?: string | null; p_limit?: number }
+        Returns: {
+          block_id: string
+          block_title: string
+          usage_count: number
+          total_training_weight: number
+          attributes_trained: string[]
+        }[]
+      }
+      get_team_player_matrix: {
+        Args: { p_team_id: string; p_start_date?: string | null; p_end_date?: string | null }
+        Returns: {
+          player_id: string
+          player_name: string
+          position: string | null
+          sessions_attended: number
+          total_sessions: number
+          attendance_percentage: number
+          active_idp_count: number
+          most_trained_idp: string | null
+          most_trained_sessions: number
+          mid_trained_idp: string | null
+          mid_trained_sessions: number
+          least_trained_idp: string | null
+          least_trained_sessions: number
+        }[]
+      }
+      get_player_comparison: {
+        Args: { p_player_ids: string[]; p_start_date?: string | null; p_end_date?: string | null }
+        Returns: {
+          player_id: string
+          player_name: string
+          position: string | null
+          sessions_attended: number
+          total_sessions: number
+          attendance_percentage: number
+          total_opportunities: number
+          idps: Json
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
@@ -1107,7 +1395,453 @@ export type SessionUpdate = TablesUpdate<'sessions'>
 export type SessionAttendance = Tables<'session_attendance'>
 export type SessionAttendanceInsert = TablesInsert<'session_attendance'>
 export type SessionAttendanceUpdate = TablesUpdate<'session_attendance'>
+export type SessionFeedback = Tables<'session_feedback'>
+export type SessionFeedbackInsert = TablesInsert<'session_feedback'>
+export type SessionFeedbackUpdate = TablesUpdate<'session_feedback'>
+export type PlayerFeedbackNote = Tables<'player_feedback_notes'>
+export type PlayerFeedbackNoteInsert = TablesInsert<'player_feedback_notes'>
+export type FeedbackInsight = Tables<'feedback_insights'>
+export type FeedbackInsightInsert = TablesInsert<'feedback_insights'>
 export type TeamFacility = Tables<'team_facilities'>
 export type TeamFacilityInsert = TablesInsert<'team_facilities'>
 export type TeamFacilityUpdate = TablesUpdate<'team_facilities'>
 export type SystemDefault = Tables<'system_defaults'>
+export type PlayerIDP = Tables<'player_idps'>
+export type PlayerIDPInsert = TablesInsert<'player_idps'>
+export type PlayerIDPUpdate = TablesUpdate<'player_idps'>
+
+// ========================================
+// Player Analytics Types
+// ========================================
+
+/**
+ * Training event record - created when a player attends a session
+ * that trains an attribute matching their active IDP
+ */
+export interface PlayerTrainingEvent {
+  id: string
+  player_id: string
+  session_id: string
+  attribute_key: string
+  weight: number
+  created_at: string
+}
+
+/**
+ * IDP progress data from the player_idp_progress view
+ * Aggregates training and feedback metrics per IDP
+ */
+export interface PlayerIDPProgress {
+  idp_id: string
+  player_id: string
+  attribute_key: string
+  attribute_name: string
+  priority: number
+  idp_notes: string | null
+  started_at: string
+  ended_at: string | null
+  training_sessions: number
+  total_training_weight: number
+  positive_mentions: number
+  negative_mentions: number
+  neutral_mentions: number
+  last_trained_date: string | null
+}
+
+/**
+ * Attendance summary from the player_attendance_summary view
+ */
+export interface PlayerAttendanceSummary {
+  player_id: string
+  team_id: string
+  club_id: string
+  sessions_attended: number
+  sessions_missed: number
+  total_sessions: number
+  attendance_percentage: number
+}
+
+/**
+ * Block attribute with order type for session display
+ */
+export interface SessionBlockAttribute {
+  key: string
+  name: string
+  is_player_idp: boolean // true if this attribute matches one of the player's active IDPs
+}
+
+/**
+ * Block in a session with first/second order outcomes
+ */
+export interface SessionBlock {
+  block_id: string
+  block_title: string
+  position: number
+  first_order_outcomes: SessionBlockAttribute[]
+  second_order_outcomes: SessionBlockAttribute[]
+}
+
+/**
+ * Composite type for player session detail (used in Sessions tab)
+ */
+export interface PlayerSessionDetail {
+  session_id: string
+  title: string
+  session_date: string
+  duration: number
+  attendance_status: 'present' | 'absent'
+  team_feedback: string | null
+  player_note: string | null
+  training_events: Array<{
+    attribute_key: string
+    weight: number
+  }>
+  blocks: SessionBlock[]
+}
+
+// ========================================
+// Playing Methodology Zone Types (v2)
+// ========================================
+
+/**
+ * State for a single zone (either in-possession or out-of-possession)
+ */
+export interface ZoneState {
+  name: string
+  details: string
+}
+
+/**
+ * A single zone in the playing methodology
+ * Each zone has both in-possession and out-of-possession states
+ */
+export interface PlayingZone {
+  id: string
+  order: number
+  name: string // Custom zone name (e.g., "Attacking Third", "Build-Up Zone")
+  in_possession: ZoneState
+  out_of_possession: ZoneState
+}
+
+/**
+ * The full playing methodology zones structure
+ * Stored in playing_methodology.zones JSONB column
+ */
+export interface PlayingMethodologyZones {
+  zone_count: 3 | 4
+  zones: PlayingZone[]
+}
+
+/**
+ * Type guard to check if zones data is in the new v2 format
+ */
+export function isPlayingMethodologyZonesV2(zones: unknown): zones is PlayingMethodologyZones {
+  if (!zones || typeof zones !== 'object') return false
+  const z = zones as Record<string, unknown>
+  return (
+    (z.zone_count === 3 || z.zone_count === 4) &&
+    Array.isArray(z.zones)
+  )
+}
+
+// ========================================
+// Positional Profile Attributes (v2)
+// ========================================
+
+/**
+ * Attributes structure for positional profiles
+ * Separates in-possession and out-of-possession attributes
+ * Stored in positional_profiles.attributes JSONB column
+ */
+export interface PositionalProfileAttributes {
+  in_possession: string[]      // up to 5 attribute keys
+  out_of_possession: string[]  // up to 5 attribute keys
+}
+
+/**
+ * Type guard to check if attributes data is in the new v2 format
+ */
+export function isPositionalProfileAttributesV2(attrs: unknown): attrs is PositionalProfileAttributes {
+  if (!attrs || typeof attrs !== 'object') return false
+  const a = attrs as Record<string, unknown>
+  return (
+    Array.isArray(a.in_possession) &&
+    Array.isArray(a.out_of_possession)
+  )
+}
+
+// ========================================
+// Team Analytics Types
+// ========================================
+
+/**
+ * Team training summary from get_team_training_summary RPC
+ * Used for overview cards
+ */
+export interface TeamTrainingSummary {
+  team_id: string
+  sessions_completed: number
+  total_training_minutes: number
+  total_players: number
+  active_idps: number
+  unique_idp_attributes: number
+  attributes_trained: number
+  idp_coverage_rate: number
+  avg_attendance_percentage: number
+}
+
+/**
+ * IDP gap data from get_team_idp_gaps RPC
+ * Shows which IDPs need attention based on recency
+ */
+export interface TeamIDPGap {
+  attribute_key: string
+  attribute_name: string
+  players_with_idp: number
+  players_trained: number
+  last_trained_date: string | null
+  days_since_trained: number
+  sessions_since_trained: number
+  total_sessions: number
+  player_ids: string[]
+  player_names: string[]
+  gap_status: 'urgent' | 'due' | 'on_track'
+  training_sessions: Array<{
+    session_id: string
+    session_name: string
+    session_date: string
+  }> | null
+  priority_score: number // Weighted priority score 0-100
+}
+
+/**
+ * Attribute breakdown by category from get_team_attribute_breakdown RPC
+ * Used for the Four Corners training load visualization
+ */
+export interface TeamAttributeBreakdown {
+  category: string
+  category_display_name: string
+  total_opportunities: number
+  attribute_count: number
+  attributes: Array<{
+    key: string
+    name: string
+    opportunities: number
+  }>
+}
+
+/**
+ * Player matrix row from get_team_player_matrix RPC
+ * Used for the player development table
+ */
+export interface TeamPlayerMatrixRow {
+  player_id: string
+  player_name: string
+  position: string | null
+  sessions_attended: number
+  total_sessions: number
+  attendance_percentage: number
+  active_idp_count: number
+  most_trained_idp: string | null
+  most_trained_sessions: number
+  mid_trained_idp: string | null
+  mid_trained_sessions: number
+  least_trained_idp: string | null
+  least_trained_sessions: number
+}
+
+/**
+ * Training trend point from get_team_training_trend RPC
+ * Used for the weekly trend chart
+ */
+export interface TeamTrainingTrendPoint {
+  week_start: string
+  week_label: string
+  sessions_count: number
+  total_opportunities: number
+  avg_attendance: number
+}
+
+/**
+ * Block attribute with key and name
+ */
+export interface BlockAttribute {
+  key: string
+  name: string
+}
+
+/**
+ * Impacted player info
+ */
+export interface ImpactedPlayer {
+  player_id: string
+  player_name: string
+  position: string | null
+}
+
+/**
+ * Session block usage from get_team_session_block_usage RPC
+ * Shows most frequently used blocks with IDP impact
+ */
+export interface TeamSessionBlockUsage {
+  block_id: string
+  block_title: string
+  usage_count: number
+  active_idp_impact: number
+  first_order_attributes: BlockAttribute[]
+  second_order_attributes: BlockAttribute[]
+  impacted_players: ImpactedPlayer[]
+}
+
+/**
+ * Block recommendation from get_team_block_recommendations RPC
+ * Shows blocks sorted by their impact on high-priority IDPs
+ */
+export interface TeamBlockRecommendation {
+  block_id: string
+  block_title: string
+  priority_score: number // Sum of (IDP_score * relevance) for matching attributes
+  idp_impact_count: number // Number of active IDPs this block trains
+  first_order_attributes: BlockAttribute[]
+  second_order_attributes: BlockAttribute[]
+  impacted_players: ImpactedPlayer[]
+  idp_breakdown: Array<{
+    attribute_key: string
+    attribute_name: string
+    idp_score: number
+    relevance: number
+    players: Array<{
+      name: string
+      urgency_label: 'Underdeveloped' | 'Due for Training' | 'On Track'
+    }>
+  }>
+}
+
+// ============================================================
+// PLAYER ANALYTICS TYPES
+// Individual player analytics data structures
+// ============================================================
+
+/**
+ * Player IDP with priority scoring
+ * Enhanced version of PlayerIDPProgress with calculated priority score
+ */
+export interface PlayerIDPPriority {
+  idp_id: string
+  attribute_key: string
+  attribute_name: string
+  priority: number // 1-3 user-set priority
+  priority_score: number // 0-100 calculated score
+  days_since_trained: number
+  last_trained_date: string | null
+  training_sessions: number
+  total_training_weight: number
+  negative_mentions: number
+  positive_mentions: number
+  neutral_mentions: number
+  gap_status: 'urgent' | 'due' | 'on_track'
+  started_at: string
+  ended_at: string | null
+  idp_notes: string | null
+}
+
+/**
+ * Feedback insight with extracted quote
+ * Individual feedback mention about a player
+ */
+export interface PlayerFeedbackInsight {
+  insight_id: string
+  session_feedback_id: string
+  session_id: string
+  session_title: string
+  session_date: string
+  attribute_key: string | null
+  attribute_name: string | null
+  sentiment: 'positive' | 'negative' | 'neutral' | null
+  confidence: number | null
+  extracted_text: string | null
+  created_at: string
+}
+
+/**
+ * Block recommendation for individual player
+ * Blocks filtered to player's active IDPs
+ */
+export interface PlayerBlockRecommendation {
+  block_id: string
+  block_title: string
+  priority_score: number
+  idp_impact_count: number
+  first_order_attributes: Array<{ key: string; name: string }>
+  second_order_attributes: Array<{ key: string; name: string }>
+  idp_breakdown: Array<{
+    attribute_key: string
+    attribute_name: string
+    idp_score: number
+    relevance: number
+  }>
+}
+
+/**
+ * Training balance by category (Four Corners)
+ * Shows distribution of training across attribute categories
+ */
+export interface PlayerTrainingBalance {
+  category: string
+  category_display_name: string
+  total_opportunities: number
+  percentage: number
+  attribute_count: number
+  attributes: Array<{
+    key: string
+    name: string
+    opportunities: number
+  }>
+}
+
+/**
+ * Filters for feedback insights query
+ */
+export interface FeedbackFilters {
+  attributeKey?: string | null
+  sentiment?: 'positive' | 'negative' | 'neutral' | null
+  startDate?: Date | null
+  endDate?: Date | null
+}
+
+/**
+ * Time period filter preset options
+ */
+export type TimePeriodPreset = '1w' | '1m' | '6w' | '12w' | 'all' | 'custom'
+
+/**
+ * Time period filter state
+ */
+export interface TimePeriodFilter {
+  preset: TimePeriodPreset
+  startDate: Date | null
+  endDate: Date | null
+}
+
+/**
+ * Helper to get date range from preset
+ */
+export function getDateRangeFromPreset(preset: TimePeriodPreset): { start: Date | null; end: Date | null } {
+  const now = new Date()
+  const end = now
+
+  switch (preset) {
+    case '1w':
+      return { start: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), end }
+    case '1m':
+      return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end }
+    case '6w':
+      return { start: new Date(now.getTime() - 42 * 24 * 60 * 60 * 1000), end }
+    case '12w':
+      return { start: new Date(now.getTime() - 84 * 24 * 60 * 60 * 1000), end }
+    case 'all':
+      return { start: null, end: null }
+    case 'custom':
+      return { start: null, end: null } // Will be set manually
+  }
+}

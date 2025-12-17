@@ -180,7 +180,7 @@ export const TeamFacilitiesStep: React.FC<TeamFacilitiesStepProps> = ({
             e.target.style.borderColor = theme.colors.border.primary
           }}
         >
-          <option value="">Select training space...</option>
+          <option value="" disabled>Select training space...</option>
           {spaceOptions.map(option => (
             <option key={option.key} value={option.key}>
               {(option.value as unknown as OptionValue)?.name || option.key}
@@ -257,6 +257,7 @@ export const TeamFacilitiesStep: React.FC<TeamFacilitiesStepProps> = ({
                 style={{
                   flex: 1,
                   padding: theme.spacing.sm,
+                  paddingRight: '2.5rem',
                   fontSize: theme.typography.fontSize.base,
                   color: item.type ? theme.colors.text.primary : theme.colors.text.secondary,
                   backgroundColor: theme.colors.background.primary,
@@ -264,9 +265,15 @@ export const TeamFacilitiesStep: React.FC<TeamFacilitiesStepProps> = ({
                   borderRadius: theme.borderRadius.md,
                   outline: 'none',
                   cursor: 'pointer',
+                  WebkitAppearance: 'none',
+                  MozAppearance: 'none',
+                  appearance: 'none',
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 12px center',
                 }}
               >
-                <option value="">Select equipment...</option>
+                <option value="" disabled>Select equipment...</option>
                 {equipmentOptions.map(option => (
                   <option key={option.key} value={option.key}>
                     {(option.value as unknown as OptionValue)?.name || option.key}
@@ -288,6 +295,7 @@ export const TeamFacilitiesStep: React.FC<TeamFacilitiesStepProps> = ({
                   borderRadius: theme.borderRadius.md,
                   outline: 'none',
                   textAlign: 'center',
+                  MozAppearance: 'textfield',
                 }}
               />
               <button

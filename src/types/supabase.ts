@@ -173,9 +173,6 @@ export type Database = {
           id: string
           name: string
           position: string | null
-          target_1: string | null
-          target_2: string | null
-          target_3: string | null
           team_id: string
           updated_at: string
         }
@@ -187,9 +184,6 @@ export type Database = {
           id?: string
           name: string
           position?: string | null
-          target_1?: string | null
-          target_2?: string | null
-          target_3?: string | null
           team_id: string
           updated_at?: string
         }
@@ -201,9 +195,6 @@ export type Database = {
           id?: string
           name?: string
           position?: string | null
-          target_1?: string | null
-          target_2?: string | null
-          target_3?: string | null
           team_id?: string
           updated_at?: string
         }
@@ -220,6 +211,50 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_idps: {
+        Row: {
+          id: string
+          player_id: string
+          attribute_key: string
+          priority: number
+          notes: string | null
+          started_at: string
+          ended_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          player_id: string
+          attribute_key: string
+          priority?: number
+          notes?: string | null
+          started_at?: string
+          ended_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          player_id?: string
+          attribute_key?: string
+          priority?: number
+          notes?: string | null
+          started_at?: string
+          ended_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_idps_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
