@@ -298,7 +298,7 @@ export type Database = {
           },
         ]
       }
-      playing_methodology: {
+      game_model: {
         Row: {
           club_id: string
           created_at: string
@@ -340,21 +340,21 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "playing_methodology_club_id_fkey"
+            foreignKeyName: "game_model_club_id_fkey"
             columns: ["club_id"]
             isOneToOne: false
             referencedRelation: "clubs"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "playing_methodology_created_by_coach_id_fkey"
+            foreignKeyName: "game_model_created_by_coach_id_fkey"
             columns: ["created_by_coach_id"]
             isOneToOne: false
             referencedRelation: "coaches"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "playing_methodology_team_id_fkey"
+            foreignKeyName: "game_model_team_id_fkey"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
@@ -1119,7 +1119,7 @@ export type Database = {
         Args: { target_membership_id: string }
         Returns: Json
       }
-      revert_team_playing_methodology: {
+      revert_team_game_model: {
         Args: { p_team_id: string; p_club_id: string }
         Returns: Json
       }
@@ -1500,11 +1500,12 @@ export interface PlayerSessionDetail {
 }
 
 // ========================================
-// Playing Methodology Zone Types (v2)
+// Game Model Zone Types (v2 -> v3)
 // ========================================
 
 /**
  * State for a single zone (either in-possession or out-of-possession)
+ * @deprecated Use ZoneBlock instead for v3 format
  */
 export interface ZoneState {
   name: string
@@ -1512,36 +1513,121 @@ export interface ZoneState {
 }
 
 /**
- * A single zone in the playing methodology
- * Each zone has both in-possession and out-of-possession states
+ * A single block within a zone (v3 format)
+ * Each zone can have multiple blocks for in-possession and out-of-possession
  */
-export interface PlayingZone {
-  id: string
-  order: number
-  name: string // Custom zone name (e.g., "Attacking Third", "Build-Up Zone")
-  in_possession: ZoneState
-  out_of_possession: ZoneState
+export interface ZoneBlock {
+  id: string        // Unique block ID for referencing from syllabus
+  name: string
+  details: string
 }
 
 /**
- * The full playing methodology zones structure
- * Stored in playing_methodology.zones JSONB column
+ * Type guard to check if data is a ZoneBlock array (v3 format)
  */
-export interface PlayingMethodologyZones {
+export function isZoneBlockArray(data: unknown): data is ZoneBlock[] {
+  if (!Array.isArray(data)) return false
+  if (data.length === 0) return true // Empty array is valid
+  const first = data[0]
+  return (
+    typeof first === 'object' &&
+    first !== null &&
+    'id' in first &&
+    'name' in first &&
+    'details' in first
+  )
+}
+
+/**
+ * A single zone in the game model
+ * Each zone has both in-possession and out-of-possession blocks
+ * v3: Changed from single ZoneState to array of ZoneBlocks
+ */
+export interface GameZone {
+  id: string
+  order: number
+  name: string // Custom zone name (e.g., "Attacking Third", "Build-Up Zone")
+  in_possession: ZoneBlock[]      // Multiple blocks (v3)
+  out_of_possession: ZoneBlock[]  // Multiple blocks (v3)
+}
+
+/**
+ * Match format options for the game model
+ */
+export type MatchFormat = '3v3' | '5v5' | '7v7' | '9v9' | '11v11'
+
+/**
+ * The full game model zones structure
+ * Stored in game_model.zones JSONB column
+ */
+export interface GameModelZones {
   zone_count: 3 | 4
-  zones: PlayingZone[]
+  zones: GameZone[]
+  match_format?: MatchFormat // Optional for backwards compatibility, defaults to '11v11'
 }
 
 /**
  * Type guard to check if zones data is in the new v2 format
  */
-export function isPlayingMethodologyZonesV2(zones: unknown): zones is PlayingMethodologyZones {
+export function isGameModelZonesV2(zones: unknown): zones is GameModelZones {
   if (!zones || typeof zones !== 'object') return false
   const z = zones as Record<string, unknown>
   return (
     (z.zone_count === 3 || z.zone_count === 4) &&
     Array.isArray(z.zones)
   )
+}
+
+// ========================================
+// Training Syllabus Types
+// ========================================
+
+/**
+ * Theme selection for a training day
+ * References a Game Model zone's in_possession or out_of_possession block
+ * v3: Added blockId to reference specific block within the zone
+ */
+export interface ThemeSelection {
+  zoneId: string           // References GameZone.id
+  zoneName: string         // Denormalized zone name (e.g., "Attacking Third")
+  blockType: 'in_possession' | 'out_of_possession'
+  blockId: string          // References ZoneBlock.id (v3)
+  blockName: string        // Denormalized block name (e.g., "Build Up Play")
+}
+
+/**
+ * A single day in the training syllabus
+ */
+export interface SyllabusDay {
+  dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6  // 0=Monday, 6=Sunday
+  theme: ThemeSelection | null
+  comments: string | null
+}
+
+/**
+ * A week in the training syllabus
+ */
+export interface SyllabusWeek {
+  id: string               // UUID for the week
+  order: number            // 1-indexed week number
+  days: SyllabusDay[]      // Array of 7 days (Mon-Sun)
+}
+
+/**
+ * The full training syllabus structure
+ * Stored in training_methodology.syllabus JSONB column
+ */
+export interface TrainingSyllabus {
+  weeks: SyllabusWeek[]
+}
+
+/**
+ * Type guard to check if data is a valid TrainingSyllabus
+ */
+export function isTrainingSyllabus(data: unknown): data is TrainingSyllabus {
+  if (!data || typeof data !== 'object') return false
+  const s = data as Record<string, unknown>
+  return Array.isArray(s.weeks)
 }
 
 // ========================================

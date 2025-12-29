@@ -2,130 +2,224 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { FaPlus, FaTrash } from 'react-icons/fa'
 import { CgSpinnerAlt } from 'react-icons/cg'
 import { theme } from '@/styles/theme'
 import { useAuth } from '@/contexts/AuthContext'
 import {
-  getClubTrainingMethodology,
-  createTrainingMethodology,
-  updateTrainingMethodology,
-  deleteTrainingMethodology,
-  subscribeToTrainingMethodology,
-  type TrainingMethodology,
+  getClubTrainingSyllabus,
+  saveClubTrainingSyllabus,
+  createDefaultSyllabus,
+  getClubGameModelZones,
+  type TrainingSyllabus,
+  type SyllabusDay,
+  type SyllabusWeek,
 } from '@/lib/methodology'
+import type { GameModelZones } from '@/types/database'
+import { WeeklyCalendar } from '@/components/methodology/syllabus/WeeklyCalendar'
+import { DayEditModal } from '@/components/methodology/syllabus/DayEditModal'
 
-export default function TrainingMethodologyPage() {
+export default function ClubTrainingSyllabusPage() {
   const { club, coach } = useAuth()
-  const [rules, setRules] = useState<TrainingMethodology[]>([])
+  const [syllabus, setSyllabus] = useState<TrainingSyllabus | null>(null)
+  const [zones, setZones] = useState<GameModelZones | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Edit state
-  const [editingRule, setEditingRule] = useState<TrainingMethodology | null>(null)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [editTitle, setEditTitle] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [isSaving, setIsSaving] = useState(false)
+  // Day edit state
+  const [editingDay, setEditingDay] = useState<{ weekId: string; dayOfWeek: number } | null>(null)
 
-  // Delete confirmation
-  const [deleteConfirmRule, setDeleteConfirmRule] = useState<TrainingMethodology | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+  // Fetch syllabus and zones
+  const fetchData = useCallback(async () => {
+    if (!club?.id || !coach?.id) return
 
-  const fetchRules = useCallback(async () => {
-    if (!club?.id) return
+    setIsLoading(true)
+    setError('')
 
-    const { data, error } = await getClubTrainingMethodology(club.id)
-    if (error) {
-      setError(error)
-    } else if (data) {
-      setRules(data)
+    const [syllabusResult, zonesResult] = await Promise.all([
+      getClubTrainingSyllabus(club.id),
+      getClubGameModelZones(club.id),
+    ])
+
+    // Handle zones
+    let currentZones: GameModelZones | null = null
+    if (zonesResult.error) {
+      console.error('Error fetching zones:', zonesResult.error)
+    } else {
+      currentZones = zonesResult.data
     }
+    setZones(currentZones)
+
+    // Handle syllabus - auto-create if none exists and zones are configured
+    if (syllabusResult.error) {
+      setError(syllabusResult.error)
+    } else if (!syllabusResult.data && currentZones && currentZones.zones.length > 0) {
+      // Auto-create syllabus
+      const newSyllabus = createDefaultSyllabus()
+      const { error: saveError } = await saveClubTrainingSyllabus(club.id, coach.id, newSyllabus)
+      if (saveError) {
+        setError(saveError)
+      } else {
+        setSyllabus(newSyllabus)
+      }
+    } else {
+      setSyllabus(syllabusResult.data)
+    }
+
     setIsLoading(false)
-  }, [club?.id])
+  }, [club?.id, coach?.id])
 
   useEffect(() => {
-    fetchRules()
-  }, [fetchRules])
+    fetchData()
+  }, [fetchData])
 
-  // Realtime subscription
-  useEffect(() => {
-    if (!club?.id) return
-
-    const unsubscribe = subscribeToTrainingMethodology(club.id, null, () => {
-      fetchRules()
-    })
-
-    return unsubscribe
-  }, [club?.id, fetchRules])
-
-  const handleAddRule = () => {
-    setEditingRule(null)
-    setEditTitle('')
-    setEditDescription('')
-    setIsEditModalOpen(true)
-  }
-
-  const handleEditRule = (rule: TrainingMethodology) => {
-    setEditingRule(rule)
-    setEditTitle(rule.title)
-    setEditDescription(rule.description || '')
-    setIsEditModalOpen(true)
-  }
-
-  const handleSaveRule = async () => {
-    if (!club?.id || !coach?.id || !editTitle.trim()) return
+  // Add a week
+  const handleAddWeek = async () => {
+    if (!club?.id || !coach?.id || !syllabus) return
 
     setIsSaving(true)
     setError('')
 
-    if (editingRule) {
-      // Update existing rule
-      const { error } = await updateTrainingMethodology(editingRule.id, {
-        title: editTitle.trim(),
-        description: editDescription.trim(),
-      })
+    const newWeek: SyllabusWeek = {
+      id: crypto.randomUUID(),
+      order: syllabus.weeks.length + 1,
+      days: [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
+        dayOfWeek: dayOfWeek as SyllabusDay['dayOfWeek'],
+        theme: null,
+        comments: null,
+      })),
+    }
 
-      if (error) {
-        setError(error)
-      } else {
-        await fetchRules()
-        setIsEditModalOpen(false)
-      }
+    const updatedSyllabus: TrainingSyllabus = {
+      ...syllabus,
+      weeks: [...syllabus.weeks, newWeek],
+    }
+
+    const { error } = await saveClubTrainingSyllabus(club.id, coach.id, updatedSyllabus)
+
+    if (error) {
+      setError(error)
     } else {
-      // Create new rule
-      const { error } = await createTrainingMethodology(
-        club.id,
-        coach.id,
-        editTitle.trim(),
-        editDescription.trim()
-      )
-
-      if (error) {
-        setError(error)
-      } else {
-        await fetchRules()
-        setIsEditModalOpen(false)
-      }
+      setSyllabus(updatedSyllabus)
     }
 
     setIsSaving(false)
   }
 
-  const handleDeleteRule = async () => {
-    if (!deleteConfirmRule) return
+  // Remove a week
+  const handleRemoveWeek = async (weekId: string) => {
+    if (!club?.id || !coach?.id || !syllabus || syllabus.weeks.length <= 1) return
 
-    setIsDeleting(true)
-    const { error } = await deleteTrainingMethodology(deleteConfirmRule.id)
+    setIsSaving(true)
+    setError('')
+
+    const updatedWeeks = syllabus.weeks
+      .filter((w) => w.id !== weekId)
+      .map((w, index) => ({ ...w, order: index + 1 }))
+
+    const updatedSyllabus: TrainingSyllabus = {
+      ...syllabus,
+      weeks: updatedWeeks,
+    }
+
+    const { error } = await saveClubTrainingSyllabus(club.id, coach.id, updatedSyllabus)
 
     if (error) {
       setError(error)
     } else {
-      await fetchRules()
+      setSyllabus(updatedSyllabus)
     }
 
-    setIsDeleting(false)
-    setDeleteConfirmRule(null)
+    setIsSaving(false)
+  }
+
+  // Reorder weeks
+  const handleReorderWeeks = async (reorderedWeeks: SyllabusWeek[]) => {
+    if (!club?.id || !coach?.id || !syllabus) return
+
+    const previousSyllabus = syllabus
+    const updatedSyllabus: TrainingSyllabus = {
+      ...syllabus,
+      weeks: reorderedWeeks,
+    }
+
+    // Optimistic update
+    setSyllabus(updatedSyllabus)
+    setIsSaving(true)
+    setError('')
+
+    const { error } = await saveClubTrainingSyllabus(club.id, coach.id, updatedSyllabus)
+
+    if (error) {
+      setError(error)
+      setSyllabus(previousSyllabus) // Revert on error
+    }
+
+    setIsSaving(false)
+  }
+
+  // Handle day click
+  const handleDayClick = (weekId: string, dayOfWeek: number) => {
+    setEditingDay({ weekId, dayOfWeek })
+  }
+
+  // Get day data for editing
+  const getEditingDayData = (): SyllabusDay | null => {
+    if (!editingDay || !syllabus) return null
+
+    const week = syllabus.weeks.find((w) => w.id === editingDay.weekId)
+    if (!week) return null
+
+    return (
+      week.days.find((d) => d.dayOfWeek === editingDay.dayOfWeek) || {
+        dayOfWeek: editingDay.dayOfWeek as SyllabusDay['dayOfWeek'],
+        theme: null,
+        comments: null,
+      }
+    )
+  }
+
+  // Get week number for editing
+  const getEditingWeekNumber = (): number => {
+    if (!editingDay || !syllabus) return 1
+
+    const week = syllabus.weeks.find((w) => w.id === editingDay.weekId)
+    return week?.order || 1
+  }
+
+  // Save day changes
+  const handleSaveDay = async (updatedDay: SyllabusDay) => {
+    if (!club?.id || !coach?.id || !syllabus || !editingDay) return
+
+    setIsSaving(true)
+    setError('')
+
+    const updatedSyllabus: TrainingSyllabus = {
+      ...syllabus,
+      weeks: syllabus.weeks.map((week) => {
+        if (week.id !== editingDay.weekId) return week
+
+        // Update or add the day
+        const existingDayIndex = week.days.findIndex((d) => d.dayOfWeek === updatedDay.dayOfWeek)
+        const updatedDays =
+          existingDayIndex >= 0
+            ? week.days.map((d, i) => (i === existingDayIndex ? updatedDay : d))
+            : [...week.days, updatedDay]
+
+        return { ...week, days: updatedDays }
+      }),
+    }
+
+    const { error } = await saveClubTrainingSyllabus(club.id, coach.id, updatedSyllabus)
+
+    if (error) {
+      setError(error)
+    } else {
+      setSyllabus(updatedSyllabus)
+      setEditingDay(null)
+    }
+
+    setIsSaving(false)
   }
 
   if (isLoading) {
@@ -136,6 +230,7 @@ export default function TrainingMethodologyPage() {
           alignItems: 'center',
           justifyContent: 'center',
           height: '100%',
+          minHeight: '400px',
         }}
       >
         <motion.div
@@ -148,14 +243,10 @@ export default function TrainingMethodologyPage() {
     )
   }
 
-  return (
-    <div>
-      {/* Header */}
-      <div
-        style={{
-          marginBottom: theme.spacing.xl,
-        }}
-      >
+  // No zones configured - show warning
+  if (!zones || !zones.zones || zones.zones.length === 0) {
+    return (
+      <div>
         <h1
           style={{
             fontSize: theme.typography.fontSize['2xl'],
@@ -164,434 +255,179 @@ export default function TrainingMethodologyPage() {
             marginBottom: theme.spacing.sm,
           }}
         >
-          Training Methodology
+          Training Syllabus
         </h1>
         <p
           style={{
             fontSize: theme.typography.fontSize.base,
             color: theme.colors.text.secondary,
+            marginBottom: theme.spacing.xl,
           }}
         >
-          How you plan to train your players, including practice design, coaching style, and key
-          themes
+          Plan your weekly training themes based on your Game Model
         </p>
-      </div>
 
-      {/* Error Message */}
-      {error && (
         <div
           style={{
-            padding: theme.spacing.md,
-            backgroundColor: 'rgba(220, 53, 69, 0.1)',
-            border: `1px solid ${theme.colors.status.error}`,
-            borderRadius: theme.borderRadius.md,
-            color: theme.colors.status.error,
-            marginBottom: theme.spacing.lg,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* Rules List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.lg }}>
-        {rules.map((rule) => (
-          <div
-            key={rule.id}
-            style={{
-              backgroundColor: theme.colors.background.secondary,
-              border: '1px solid rgba(68, 68, 68, 0.3)',
-              borderRadius: theme.borderRadius.lg,
-              padding: theme.spacing.xl,
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: theme.spacing.md,
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <h3
-                  style={{
-                    fontSize: theme.typography.fontSize.xl,
-                    fontWeight: theme.typography.fontWeight.semibold,
-                    color: theme.colors.text.primary,
-                    marginBottom: theme.spacing.sm,
-                  }}
-                >
-                  {rule.title}
-                </h3>
-                {rule.description && (
-                  <p
-                    style={{
-                      fontSize: theme.typography.fontSize.base,
-                      color: theme.colors.text.secondary,
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    {rule.description}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => handleEditRule(rule)}
-                style={{
-                  padding: `${theme.spacing.sm} ${theme.spacing.md}`,
-                  backgroundColor: theme.colors.background.tertiary,
-                  color: theme.colors.text.primary,
-                  border: `1px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  fontSize: theme.typography.fontSize.sm,
-                  cursor: 'pointer',
-                }}
-              >
-                Edit
-              </button>
-            </div>
-          </div>
-        ))}
-
-        {/* Add Rule Button */}
-        <button
-          onClick={handleAddRule}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: theme.spacing.sm,
-            padding: theme.spacing.lg,
-            backgroundColor: theme.colors.background.secondary,
-            border: `2px dashed ${theme.colors.border.primary}`,
+            padding: theme.spacing.xl,
+            backgroundColor: theme.colors.background.tertiary,
             borderRadius: theme.borderRadius.lg,
-            color: theme.colors.text.secondary,
-            fontSize: theme.typography.fontSize.base,
-            cursor: 'pointer',
-            transition: theme.transitions.fast,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = theme.colors.gold.main
-            e.currentTarget.style.color = theme.colors.gold.main
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = theme.colors.border.primary
-            e.currentTarget.style.color = theme.colors.text.secondary
+            textAlign: 'center',
           }}
         >
-          <FaPlus size={14} />
-          Add Rule
-        </button>
+          <p
+            style={{
+              fontSize: theme.typography.fontSize.lg,
+              color: theme.colors.text.primary,
+              marginBottom: theme.spacing.md,
+            }}
+          >
+            Configure your Game Model first
+          </p>
+          <p
+            style={{
+              fontSize: theme.typography.fontSize.base,
+              color: theme.colors.text.secondary,
+            }}
+          >
+            The Training Syllabus uses themes from your Game Model zones. Please set up your Game
+            Model with in-possession and out-of-possession blocks before creating your syllabus.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // No syllabus yet (zones not configured) - show message
+  if (!syllabus) {
+    return (
+      <div>
+        <h1
+          style={{
+            fontSize: theme.typography.fontSize['2xl'],
+            fontWeight: theme.typography.fontWeight.bold,
+            color: theme.colors.text.primary,
+            marginBottom: theme.spacing.sm,
+          }}
+        >
+          Training Syllabus
+        </h1>
+        <p
+          style={{
+            fontSize: theme.typography.fontSize.base,
+            color: theme.colors.text.secondary,
+            marginBottom: theme.spacing.xl,
+          }}
+        >
+          Plan your weekly training themes based on your Game Model
+        </p>
+
+        <div
+          style={{
+            padding: theme.spacing.xl,
+            backgroundColor: theme.colors.background.tertiary,
+            borderRadius: theme.borderRadius.lg,
+            textAlign: 'center',
+          }}
+        >
+          <p
+            style={{
+              fontSize: theme.typography.fontSize.base,
+              color: theme.colors.text.secondary,
+            }}
+          >
+            Configure your Game Model to get started with your training syllabus.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Syllabus exists - show calendar
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {/* Header - Fixed */}
+      <div style={{ flexShrink: 0, marginBottom: theme.spacing.xl, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1
+            style={{
+              fontSize: theme.typography.fontSize['2xl'],
+              fontWeight: theme.typography.fontWeight.bold,
+              color: theme.colors.text.primary,
+              marginBottom: theme.spacing.sm,
+            }}
+          >
+            Training Syllabus
+          </h1>
+          <p
+            style={{
+              fontSize: theme.typography.fontSize.base,
+              color: theme.colors.text.secondary,
+            }}
+          >
+            Click any day to assign a training theme from your Game Model
+          </p>
+        </div>
+        {isSaving && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+              color: theme.colors.text.muted,
+              fontSize: theme.typography.fontSize.sm,
+            }}
+          >
+            <motion.span
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+              style={{ display: 'inline-flex' }}
+            >
+              <CgSpinnerAlt size={14} />
+            </motion.span>
+            Saving...
+          </div>
+        )}
       </div>
 
-      {/* Edit Modal */}
-      {isEditModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: theme.spacing.lg,
-          }}
-          onClick={() => setIsEditModalOpen(false)}
-        >
+      {/* Scrollable Content */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {/* Error Message */}
+        {error && (
           <div
             style={{
-              backgroundColor: theme.colors.background.primary,
-              borderRadius: theme.borderRadius.lg,
-              padding: theme.spacing.xl,
-              width: '100%',
-              maxWidth: '500px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
+              padding: theme.spacing.md,
+              backgroundColor: 'rgba(220, 53, 69, 0.1)',
+              border: `1px solid ${theme.colors.status.error}`,
+              borderRadius: theme.borderRadius.md,
+              color: theme.colors.status.error,
+              marginBottom: theme.spacing.lg,
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <h2
-              style={{
-                fontSize: theme.typography.fontSize.xl,
-                fontWeight: theme.typography.fontWeight.bold,
-                color: theme.colors.text.primary,
-                marginBottom: theme.spacing.lg,
-              }}
-            >
-              {editingRule ? 'Edit Rule' : 'Add Rule'}
-            </h2>
-
-            <div style={{ marginBottom: theme.spacing.lg }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.sm,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Title
-              </label>
-              <input
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="e.g., Warm-up Protocol"
-                style={{
-                  width: '100%',
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.secondary,
-                  color: theme.colors.text.primary,
-                  border: `2px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  fontSize: theme.typography.fontSize.base,
-                  outline: 'none',
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = theme.colors.gold.main
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = theme.colors.border.primary
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: theme.spacing.xl }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.sm,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Description
-              </label>
-              <textarea
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Describe this training principle or methodology..."
-                rows={5}
-                style={{
-                  width: '100%',
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.secondary,
-                  color: theme.colors.text.primary,
-                  border: `2px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  fontSize: theme.typography.fontSize.base,
-                  outline: 'none',
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = theme.colors.gold.main
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = theme.colors.border.primary
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: theme.spacing.md, justifyContent: 'space-between' }}>
-              {editingRule ? (
-                <button
-                  onClick={() => {
-                    setIsEditModalOpen(false)
-                    setDeleteConfirmRule(editingRule)
-                  }}
-                  disabled={isSaving}
-                  style={{
-                    padding: `${theme.spacing.md} ${theme.spacing.xl}`,
-                    backgroundColor: 'transparent',
-                    color: theme.colors.status.error,
-                    border: `1px solid ${theme.colors.status.error}`,
-                    borderRadius: theme.borderRadius.md,
-                    fontSize: theme.typography.fontSize.base,
-                    cursor: isSaving ? 'not-allowed' : 'pointer',
-                    opacity: isSaving ? 0.5 : 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: theme.spacing.sm,
-                  }}
-                >
-                  <FaTrash size={14} />
-                  Delete
-                </button>
-              ) : (
-                <div />
-              )}
-              <div style={{ display: 'flex', gap: theme.spacing.md }}>
-                <button
-                  onClick={() => setIsEditModalOpen(false)}
-                  disabled={isSaving}
-                  style={{
-                    padding: `${theme.spacing.md} ${theme.spacing.xl}`,
-                    backgroundColor: theme.colors.background.tertiary,
-                    color: theme.colors.text.primary,
-                    border: 'none',
-                    borderRadius: theme.borderRadius.md,
-                    fontSize: theme.typography.fontSize.base,
-                    cursor: isSaving ? 'not-allowed' : 'pointer',
-                    opacity: isSaving ? 0.5 : 1,
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveRule}
-                  disabled={!editTitle.trim() || isSaving}
-                  style={{
-                    padding: `${theme.spacing.md} ${theme.spacing.xl}`,
-                    backgroundColor:
-                      editTitle.trim() && !isSaving
-                        ? theme.colors.gold.main
-                        : theme.colors.text.disabled,
-                    color: theme.colors.background.primary,
-                    border: 'none',
-                    borderRadius: theme.borderRadius.md,
-                    fontSize: theme.typography.fontSize.base,
-                    fontWeight: theme.typography.fontWeight.semibold,
-                    cursor: editTitle.trim() && !isSaving ? 'pointer' : 'not-allowed',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: theme.spacing.sm,
-                  }}
-                >
-                  {isSaving && (
-                    <motion.span
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                      style={{ display: 'inline-flex' }}
-                    >
-                      <CgSpinnerAlt size={16} />
-                    </motion.span>
-                  )}
-                  {isSaving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </div>
+            {error}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Delete Confirmation Modal */}
-      {deleteConfirmRule && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: theme.spacing.lg,
-          }}
-          onClick={() => setDeleteConfirmRule(null)}
-        >
-          <div
-            style={{
-              backgroundColor: theme.colors.background.primary,
-              borderRadius: theme.borderRadius.lg,
-              padding: theme.spacing.xl,
-              width: '100%',
-              maxWidth: '400px',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2
-              style={{
-                fontSize: theme.typography.fontSize.xl,
-                fontWeight: theme.typography.fontWeight.bold,
-                color: theme.colors.text.primary,
-                marginBottom: theme.spacing.md,
-              }}
-            >
-              Delete Rule
-            </h2>
-            <p
-              style={{
-                fontSize: theme.typography.fontSize.base,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.xl,
-              }}
-            >
-              Are you sure you want to delete &quot;{deleteConfirmRule.title}&quot;? This action
-              cannot be undone.
-            </p>
+        {/* Weekly Calendar */}
+        <WeeklyCalendar
+          syllabus={syllabus}
+          onDayClick={handleDayClick}
+          onAddWeek={handleAddWeek}
+          onRemoveWeek={handleRemoveWeek}
+          onReorderWeeks={handleReorderWeeks}
+        />
+      </div>
 
-            <div style={{ display: 'flex', gap: theme.spacing.md, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => {
-                  const ruleToEdit = deleteConfirmRule
-                  setDeleteConfirmRule(null)
-                  if (ruleToEdit) {
-                    setEditingRule(ruleToEdit)
-                    setEditTitle(ruleToEdit.title)
-                    setEditDescription(ruleToEdit.description || '')
-                    setIsEditModalOpen(true)
-                  }
-                }}
-                disabled={isDeleting}
-                style={{
-                  padding: `${theme.spacing.md} ${theme.spacing.xl}`,
-                  backgroundColor: theme.colors.background.tertiary,
-                  color: theme.colors.text.primary,
-                  border: 'none',
-                  borderRadius: theme.borderRadius.md,
-                  fontSize: theme.typography.fontSize.base,
-                  cursor: isDeleting ? 'not-allowed' : 'pointer',
-                  opacity: isDeleting ? 0.5 : 1,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteRule}
-                disabled={isDeleting}
-                style={{
-                  padding: `${theme.spacing.md} ${theme.spacing.xl}`,
-                  backgroundColor: theme.colors.status.error,
-                  color: theme.colors.text.primary,
-                  border: 'none',
-                  borderRadius: theme.borderRadius.md,
-                  fontSize: theme.typography.fontSize.base,
-                  fontWeight: theme.typography.fontWeight.semibold,
-                  cursor: isDeleting ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                {isDeleting && (
-                  <motion.span
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                    style={{ display: 'inline-flex' }}
-                  >
-                    <CgSpinnerAlt size={16} />
-                  </motion.span>
-                )}
-                {isDeleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Day Edit Modal */}
+      {editingDay && zones && (
+        <DayEditModal
+          day={getEditingDayData()!}
+          weekNumber={getEditingWeekNumber()}
+          zones={zones.zones}
+          onSave={handleSaveDay}
+          onClose={() => setEditingDay(null)}
+          isSaving={isSaving}
+        />
       )}
     </div>
   )

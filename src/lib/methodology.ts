@@ -1,12 +1,17 @@
 import { createClient } from '@/lib/supabase/client'
 import type { Json } from '@/types/database'
 import type {
-  PlayingZone,
-  PlayingMethodologyZones,
+  GameZone,
+  GameModelZones,
   ZoneState,
+  ZoneBlock,
   PositionalProfileAttributes,
+  MatchFormat,
+  TrainingSyllabus,
+  SyllabusWeek,
+  SyllabusDay,
 } from '@/types/database'
-import { isPlayingMethodologyZonesV2, isPositionalProfileAttributesV2 } from '@/types/database'
+import { isGameModelZonesV2, isPositionalProfileAttributesV2, isTrainingSyllabus, isZoneBlockArray } from '@/types/database'
 
 const supabase = createClient()
 
@@ -14,7 +19,7 @@ const supabase = createClient()
 // Types
 // ========================================
 
-export interface PlayingMethodology {
+export interface GameModel {
   id: string
   club_id: string
   team_id: string | null
@@ -34,6 +39,7 @@ export interface TrainingMethodology {
   created_by_coach_id: string
   title: string
   description: string | null
+  syllabus?: TrainingSyllabus | null  // Optional for backwards compatibility
   display_order: number | null
   is_active: boolean | null
   created_at: string
@@ -73,56 +79,56 @@ export interface SystemDefault {
 }
 
 // ========================================
-// Playing Methodology Operations
+// Game Model Operations
 // ========================================
 
-export async function getClubPlayingMethodology(
+export async function getClubGameModel(
   clubId: string
-): Promise<{ data: PlayingMethodology[] | null; error: string | null }> {
+): Promise<{ data: GameModel[] | null; error: string | null }> {
   const { data, error } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .select('*')
     .eq('club_id', clubId)
     .is('team_id', null)
     .order('display_order', { ascending: true })
 
   if (error) {
-    console.error('Error fetching playing methodology:', error)
+    console.error('Error fetching game model:', error)
     return { data: null, error: error.message }
   }
 
   return { data, error: null }
 }
 
-export async function getTeamPlayingMethodology(
+export async function getTeamGameModel(
   clubId: string,
   teamId: string
-): Promise<{ data: PlayingMethodology[] | null; error: string | null }> {
+): Promise<{ data: GameModel[] | null; error: string | null }> {
   const { data, error } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .select('*')
     .eq('club_id', clubId)
     .eq('team_id', teamId)
     .order('display_order', { ascending: true })
 
   if (error) {
-    console.error('Error fetching team playing methodology:', error)
+    console.error('Error fetching team game model:', error)
     return { data: null, error: error.message }
   }
 
   return { data, error: null }
 }
 
-export async function createPlayingMethodology(
+export async function createGameModel(
   clubId: string,
   coachId: string,
   title: string,
   description: string,
   teamId: string | null = null
-): Promise<{ data: PlayingMethodology | null; error: string | null }> {
+): Promise<{ data: GameModel | null; error: string | null }> {
   // Get the next display order
   let query = supabase
-    .from('playing_methodology')
+    .from('game_model')
     .select('display_order')
     .eq('club_id', clubId)
 
@@ -139,7 +145,7 @@ export async function createPlayingMethodology(
   const nextOrder = existing && existing.length > 0 ? (existing[0].display_order ?? 0) + 1 : 0
 
   const { data, error } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .insert({
       club_id: clubId,
       team_id: teamId,
@@ -152,38 +158,38 @@ export async function createPlayingMethodology(
     .single()
 
   if (error) {
-    console.error('Error creating playing methodology:', error)
+    console.error('Error creating game model:', error)
     return { data: null, error: error.message }
   }
 
   return { data, error: null }
 }
 
-export async function updatePlayingMethodology(
+export async function updateGameModel(
   id: string,
   updates: { title?: string; description?: string; display_order?: number; is_active?: boolean }
 ): Promise<{ error: string | null }> {
   const { error } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .update(updates)
     .eq('id', id)
 
   if (error) {
-    console.error('Error updating playing methodology:', error)
+    console.error('Error updating game model:', error)
     return { error: error.message }
   }
 
   return { error: null }
 }
 
-export async function deletePlayingMethodology(id: string): Promise<{ error: string | null }> {
+export async function deleteGameModel(id: string): Promise<{ error: string | null }> {
   const { error } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .delete()
     .eq('id', id)
 
   if (error) {
-    console.error('Error deleting playing methodology:', error)
+    console.error('Error deleting game model:', error)
     return { error: error.message }
   }
 
@@ -592,19 +598,19 @@ export function normalizeProfileAttributes(
 // Realtime Subscriptions
 // ========================================
 
-export function subscribeToPlayingMethodology(
+export function subscribeToGameModel(
   clubId: string,
   teamId: string | null,
   callback: (payload: any) => void
 ) {
   const channel = supabase
-    .channel(`playing_methodology_${clubId}_${teamId || 'club'}`)
+    .channel(`game_model_${clubId}_${teamId || 'club'}`)
     .on(
       'postgres_changes',
       {
         event: '*',
         schema: 'public',
-        table: 'playing_methodology',
+        table: 'game_model',
         filter: teamId
           ? `club_id=eq.${clubId},team_id=eq.${teamId}`
           : `club_id=eq.${clubId}`,
@@ -671,11 +677,11 @@ export function subscribeToPositionalProfiles(
 }
 
 // ========================================
-// Playing Methodology Zones Operations (v2)
+// Game Model Zones Operations (v2)
 // ========================================
 
 // Re-export types from database.ts for convenience
-export type { PlayingZone, PlayingMethodologyZones, ZoneState }
+export type { GameZone, GameModelZones, ZoneState, ZoneBlock, MatchFormat }
 
 // Legacy PitchZone type for backwards compatibility (deprecated)
 export interface PitchZone {
@@ -690,8 +696,8 @@ export interface PitchZone {
 }
 
 // Extended type with zones (v2)
-export interface PlayingMethodologyWithZones extends PlayingMethodology {
-  zones?: PlayingMethodologyZones | null
+export interface GameModelWithZones extends GameModel {
+  zones?: GameModelZones | null
 }
 
 // ========================================
@@ -713,27 +719,87 @@ const DEFAULT_ZONE_NAMES_4: Array<{ name: string }> = [
 
 /**
  * Create default zones structure for a given zone count
+ * v3: Uses empty arrays for in_possession and out_of_possession
  */
-export function createDefaultZones(zoneCount: 3 | 4): PlayingMethodologyZones {
+export function createDefaultZones(zoneCount: 3 | 4): GameModelZones {
   const defaults = zoneCount === 3 ? DEFAULT_ZONE_NAMES_3 : DEFAULT_ZONE_NAMES_4
 
-  const zones: PlayingZone[] = defaults.map((zone, index) => ({
+  const zones: GameZone[] = defaults.map((zone, index) => ({
     id: `zone-${index + 1}`,
     order: index + 1,
     name: zone.name,
-    in_possession: {
-      name: '',
-      details: '',
-    },
-    out_of_possession: {
-      name: '',
-      details: '',
-    },
+    in_possession: [],      // v3: Empty array of ZoneBlocks
+    out_of_possession: [],  // v3: Empty array of ZoneBlocks
   }))
 
   return {
     zone_count: zoneCount,
     zones,
+    match_format: '11v11',
+  }
+}
+
+/**
+ * Migrate a single zone from v2 (single ZoneState) to v3 (array of ZoneBlocks)
+ * Handles both formats gracefully
+ */
+function migrateZonePossession(
+  zoneId: string,
+  possession: ZoneState | ZoneBlock[] | unknown,
+  blockType: 'in' | 'out'
+): ZoneBlock[] {
+  // Already v3 format (array)
+  if (isZoneBlockArray(possession)) {
+    return possession
+  }
+
+  // v2 format (single object with name/details)
+  const state = possession as ZoneState
+  if (state && typeof state === 'object' && 'name' in state && 'details' in state) {
+    // Only create a block if there's actual content
+    if (state.name.trim() !== '' || state.details.trim() !== '') {
+      return [
+        {
+          id: `${zoneId}-${blockType}-1`,
+          name: state.name,
+          details: state.details,
+        },
+      ]
+    }
+  }
+
+  // Empty or invalid - return empty array
+  return []
+}
+
+/**
+ * Migrate entire GameModelZones from v2 to v3 format
+ * Returns migrated data and a flag indicating if migration occurred
+ */
+export function migrateGameModelZonesToV3(zones: GameModelZones): { data: GameModelZones; migrated: boolean } {
+  let migrated = false
+
+  const migratedZones: GameZone[] = zones.zones.map((zone) => {
+    const inPossessionIsArray = isZoneBlockArray(zone.in_possession)
+    const outPossessionIsArray = isZoneBlockArray(zone.out_of_possession)
+
+    if (!inPossessionIsArray || !outPossessionIsArray) {
+      migrated = true
+    }
+
+    return {
+      ...zone,
+      in_possession: migrateZonePossession(zone.id, zone.in_possession, 'in'),
+      out_of_possession: migrateZonePossession(zone.id, zone.out_of_possession, 'out'),
+    }
+  })
+
+  return {
+    data: {
+      ...zones,
+      zones: migratedZones,
+    },
+    migrated,
   }
 }
 
@@ -754,14 +820,14 @@ export function isLegacyZonesFormat(zones: unknown): zones is PitchZone[] {
   )
 }
 
-// Get pitch zones for a club (v2 format)
-export async function getClubPlayingMethodologyZones(
+// Get pitch zones for a club (v2/v3 format with auto-migration)
+export async function getClubGameModelZones(
   clubId: string
-): Promise<{ data: PlayingMethodologyZones | null; error: string | null }> {
+): Promise<{ data: GameModelZones | null; error: string | null }> {
   // Get the first club-level record that has zones
   const { data, error } = await supabase
-    .from('playing_methodology')
-    .select('zones')
+    .from('game_model')
+    .select('id, zones')
     .eq('club_id', clubId)
     .is('team_id', null)
     .not('zones', 'is', null)
@@ -778,22 +844,33 @@ export async function getClubPlayingMethodologyZones(
     return { data: null, error: null }
   }
 
-  // Check if it's in v2 format
-  if (isPlayingMethodologyZonesV2(data.zones)) {
-    return { data: data.zones, error: null }
+  // Check if it's in v2+ format
+  if (isGameModelZonesV2(data.zones)) {
+    // Migrate to v3 if needed (converts single objects to arrays)
+    const { data: migratedZones, migrated } = migrateGameModelZonesToV3(data.zones)
+
+    // If migration occurred, save the migrated data
+    if (migrated && data.id) {
+      await supabase
+        .from('game_model')
+        .update({ zones: migratedZones as unknown as Json })
+        .eq('id', data.id)
+    }
+
+    return { data: migratedZones, error: null }
   }
 
-  // Legacy format or invalid - treat as no zones
+  // Legacy v1 format or invalid - treat as no zones
   return { data: null, error: null }
 }
 
-// Legacy function - deprecated, use getClubPlayingMethodologyZones
-export async function getPlayingMethodologyWithZones(
+// Legacy function - deprecated, use getClubGameModelZones
+export async function getGameModelWithZones(
   clubId: string
 ): Promise<{ data: { zones: PitchZone[] } | null; error: string | null }> {
   // Get the first club-level record that has zones
   const { data, error } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .select('zones')
     .eq('club_id', clubId)
     .is('team_id', null)
@@ -819,14 +896,14 @@ export async function getPlayingMethodologyWithZones(
 }
 
 // Save pitch zones for a club (v2 format)
-export async function saveClubPlayingMethodologyZones(
+export async function saveClubGameModelZones(
   clubId: string,
   coachId: string,
-  zones: PlayingMethodologyZones
+  zones: GameModelZones
 ): Promise<{ error: string | null }> {
   // First, check if any record exists for this club
   const { data: existing } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .select('id')
     .eq('club_id', clubId)
     .is('team_id', null)
@@ -836,7 +913,7 @@ export async function saveClubPlayingMethodologyZones(
   if (existing) {
     // Update existing record's zones
     const { error } = await supabase
-      .from('playing_methodology')
+      .from('game_model')
       .update({ zones: zones as unknown as Json })
       .eq('id', existing.id)
 
@@ -847,13 +924,13 @@ export async function saveClubPlayingMethodologyZones(
   } else {
     // Create a new record with zones
     const { error } = await supabase
-      .from('playing_methodology')
+      .from('game_model')
       .insert({
         club_id: clubId,
         team_id: null,
         created_by_coach_id: coachId,
-        title: 'Playing Methodology',
-        description: 'Club playing methodology with pitch zones',
+        title: 'Game Model',
+        description: 'Club game model with pitch zones',
         zones: zones as unknown as Json,
         display_order: 0,
         is_active: true,
@@ -865,18 +942,26 @@ export async function saveClubPlayingMethodologyZones(
     }
   }
 
+  // Clean orphaned syllabus entries that reference deleted zones or blocks
+  const validZoneIds = zones.zones.map((z) => z.id)
+  const validBlockIds = zones.zones.flatMap((z) => [
+    ...z.in_possession.map((b) => b.id),
+    ...z.out_of_possession.map((b) => b.id),
+  ])
+  await cleanOrphanedSyllabusEntries(clubId, validZoneIds, validBlockIds)
+
   return { error: null }
 }
 
-// Legacy function - deprecated, use saveClubPlayingMethodologyZones
-export async function savePlayingMethodologyZones(
+// Legacy function - deprecated, use saveClubGameModelZones
+export async function saveGameModelZones(
   clubId: string,
   coachId: string,
   zones: PitchZone[]
 ): Promise<{ error: string | null }> {
   // First, check if any record with zones exists for this club
   const { data: existing } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .select('id')
     .eq('club_id', clubId)
     .is('team_id', null)
@@ -887,7 +972,7 @@ export async function savePlayingMethodologyZones(
   if (existing) {
     // Update existing record's zones
     const { error } = await supabase
-      .from('playing_methodology')
+      .from('game_model')
       .update({ zones: zones as unknown as Json })
       .eq('id', existing.id)
 
@@ -898,7 +983,7 @@ export async function savePlayingMethodologyZones(
   } else {
     // Check if there's any club-level record we can add zones to
     const { data: anyRecord } = await supabase
-      .from('playing_methodology')
+      .from('game_model')
       .select('id')
       .eq('club_id', clubId)
       .is('team_id', null)
@@ -908,7 +993,7 @@ export async function savePlayingMethodologyZones(
     if (anyRecord) {
       // Add zones to existing record
       const { error } = await supabase
-        .from('playing_methodology')
+        .from('game_model')
         .update({ zones: zones as unknown as Json })
         .eq('id', anyRecord.id)
 
@@ -919,13 +1004,13 @@ export async function savePlayingMethodologyZones(
     } else {
       // Create a new record with zones
       const { error } = await supabase
-        .from('playing_methodology')
+        .from('game_model')
         .insert({
           club_id: clubId,
           team_id: null,
           created_by_coach_id: coachId,
-          title: 'Playing Methodology',
-          description: 'Club playing methodology with pitch zones',
+          title: 'Game Model',
+          description: 'Club game model with pitch zones',
           zones: zones as unknown as Json,
           display_order: 0,
           is_active: true,
@@ -942,73 +1027,290 @@ export async function savePlayingMethodologyZones(
 }
 
 // ========================================
-// Team Training Rule Toggle Operations
+// Training Syllabus Operations
 // ========================================
 
-export interface TrainingRuleToggle {
-  id: string
-  team_id: string
-  training_rule_id: string
-  is_enabled: boolean
-  created_at: string
-  updated_at: string
+// Re-export syllabus types for convenience
+export type { TrainingSyllabus, SyllabusWeek, SyllabusDay } from '@/types/database'
+
+/**
+ * Creates a default empty syllabus with 1 week
+ */
+export function createDefaultSyllabus(): TrainingSyllabus {
+  const emptyDays: SyllabusDay[] = [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
+    dayOfWeek: dayOfWeek as SyllabusDay['dayOfWeek'],
+    theme: null,
+    comments: null,
+  }))
+
+  return {
+    weeks: [
+      {
+        id: crypto.randomUUID(),
+        order: 1,
+        days: emptyDays,
+      },
+    ],
+  }
 }
 
-export async function getTeamTrainingRuleToggles(
-  teamId: string
-): Promise<{ data: TrainingRuleToggle[] | null; error: string | null }> {
+/**
+ * Get club-level training syllabus
+ */
+export async function getClubTrainingSyllabus(
+  clubId: string
+): Promise<{ data: TrainingSyllabus | null; error: string | null }> {
+  // Use * select and cast since the syllabus column isn't in generated types yet
   const { data, error } = await supabase
-    .from('team_training_rule_toggles')
+    .from('training_methodology')
     .select('*')
-    .eq('team_id', teamId)
+    .eq('club_id', clubId)
+    .is('team_id', null)
+    .limit(1)
+    .single()
 
-  if (error) {
-    console.error('Error fetching training rule toggles:', error)
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching club syllabus:', error)
     return { data: null, error: error.message }
   }
 
-  return { data: data as TrainingRuleToggle[], error: null }
+  // Cast to access syllabus field
+  const record = data as TrainingMethodology | null
+  if (!record?.syllabus || !isTrainingSyllabus(record.syllabus)) {
+    return { data: null, error: null }
+  }
+
+  return { data: record.syllabus, error: null }
 }
 
-export async function toggleClubTrainingRule(
-  teamId: string,
-  trainingRuleId: string,
-  isEnabled: boolean
+/**
+ * Get team-level training syllabus
+ */
+export async function getTeamTrainingSyllabus(
+  clubId: string,
+  teamId: string
+): Promise<{ data: TrainingSyllabus | null; error: string | null }> {
+  // Use * select and cast since the syllabus column isn't in generated types yet
+  const { data, error } = await supabase
+    .from('training_methodology')
+    .select('*')
+    .eq('club_id', clubId)
+    .eq('team_id', teamId)
+    .limit(1)
+    .single()
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching team syllabus:', error)
+    return { data: null, error: error.message }
+  }
+
+  // Cast to access syllabus field
+  const record = data as TrainingMethodology | null
+  if (!record?.syllabus || !isTrainingSyllabus(record.syllabus)) {
+    return { data: null, error: null }
+  }
+
+  return { data: record.syllabus, error: null }
+}
+
+/**
+ * Save club-level training syllabus
+ */
+export async function saveClubTrainingSyllabus(
+  clubId: string,
+  coachId: string,
+  syllabus: TrainingSyllabus
 ): Promise<{ error: string | null }> {
-  // Upsert: insert if not exists, update if exists
-  const { error } = await supabase
-    .from('team_training_rule_toggles')
-    .upsert(
-      {
-        team_id: teamId,
-        training_rule_id: trainingRuleId,
-        is_enabled: isEnabled,
-      },
-      {
-        onConflict: 'team_id,training_rule_id',
-      }
-    )
+  // Check if record exists
+  const { data: existing } = await supabase
+    .from('training_methodology')
+    .select('id')
+    .eq('club_id', clubId)
+    .is('team_id', null)
+    .limit(1)
+    .single()
+
+  if (existing) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('training_methodology') as any)
+      .update({ syllabus })
+      .eq('id', existing.id)
+
+    if (error) {
+      console.error('Error updating club syllabus:', error)
+      return { error: error.message }
+    }
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('training_methodology') as any).insert({
+      club_id: clubId,
+      team_id: null,
+      created_by_coach_id: coachId,
+      title: 'Training Syllabus',
+      syllabus,
+      display_order: 0,
+      is_active: true,
+    })
+
+    if (error) {
+      console.error('Error creating club syllabus:', error)
+      return { error: error.message }
+    }
+  }
+
+  return { error: null }
+}
+
+/**
+ * Save team-level training syllabus
+ */
+export async function saveTeamTrainingSyllabus(
+  clubId: string,
+  teamId: string,
+  coachId: string,
+  syllabus: TrainingSyllabus
+): Promise<{ error: string | null }> {
+  // Check if record exists
+  const { data: existing } = await supabase
+    .from('training_methodology')
+    .select('id')
+    .eq('club_id', clubId)
+    .eq('team_id', teamId)
+    .limit(1)
+    .single()
+
+  if (existing) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('training_methodology') as any)
+      .update({ syllabus })
+      .eq('id', existing.id)
+
+    if (error) {
+      console.error('Error updating team syllabus:', error)
+      return { error: error.message }
+    }
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('training_methodology') as any).insert({
+      club_id: clubId,
+      team_id: teamId,
+      created_by_coach_id: coachId,
+      title: 'Training Syllabus',
+      syllabus,
+      display_order: 0,
+      is_active: true,
+    })
+
+    if (error) {
+      console.error('Error creating team syllabus:', error)
+      return { error: error.message }
+    }
+  }
+
+  return { error: null }
+}
+
+/**
+ * Revert team syllabus to club version
+ */
+export async function revertTeamTrainingSyllabus(
+  teamId: string,
+  clubId: string
+): Promise<{ error: string | null }> {
+  const { error } = await (supabase.rpc as any)('revert_team_training_syllabus', {
+    p_team_id: teamId,
+    p_club_id: clubId,
+  })
 
   if (error) {
-    console.error('Error toggling training rule:', error)
+    console.error('Error reverting team syllabus:', error)
     return { error: error.message }
   }
 
   return { error: null }
 }
 
+/**
+ * Clean orphaned syllabus entries when Game Model zones change
+ * Removes theme selections that reference deleted zones or blocks
+ * @param clubId - The club ID
+ * @param zones - The current zones with valid block IDs
+ */
+export async function cleanOrphanedSyllabusEntries(
+  clubId: string,
+  validZoneIds: string[],
+  validBlockIds?: string[]
+): Promise<{ error: string | null }> {
+  // Get all syllabi for this club (club-level and all team-level)
+  const { data: methodologyRecords, error: fetchError } = await supabase
+    .from('training_methodology')
+    .select('*')
+    .eq('club_id', clubId)
+
+  if (fetchError) {
+    console.error('Error fetching syllabi for cleanup:', fetchError)
+    return { error: fetchError.message }
+  }
+
+  if (!methodologyRecords || methodologyRecords.length === 0) {
+    return { error: null }
+  }
+
+  // Process each record
+  for (const record of methodologyRecords) {
+    const typedRecord = record as TrainingMethodology
+    if (!typedRecord.syllabus || !isTrainingSyllabus(typedRecord.syllabus)) {
+      continue
+    }
+
+    let hasChanges = false
+    const updatedSyllabus: TrainingSyllabus = {
+      weeks: typedRecord.syllabus.weeks.map((week) => ({
+        ...week,
+        days: week.days.map((day) => {
+          // If day has a theme referencing a deleted zone, clear it
+          if (day.theme && !validZoneIds.includes(day.theme.zoneId)) {
+            hasChanges = true
+            return { ...day, theme: null }
+          }
+          // If day has a theme referencing a deleted block, clear it
+          if (day.theme && validBlockIds && day.theme.blockId && !validBlockIds.includes(day.theme.blockId)) {
+            hasChanges = true
+            return { ...day, theme: null }
+          }
+          return day
+        }),
+      })),
+    }
+
+    if (hasChanges) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: updateError } = await (supabase.from('training_methodology') as any)
+        .update({ syllabus: updatedSyllabus })
+        .eq('id', record.id)
+
+      if (updateError) {
+        console.error('Error cleaning orphaned syllabus entries:', updateError)
+        // Continue processing other records even if one fails
+      }
+    }
+  }
+
+  return { error: null }
+}
+
 // ========================================
-// Team Playing Methodology (Zones) Operations
+// Team Game Model (Zones) Operations
 // ========================================
 
-// Get team zones (v2 format)
-export async function getTeamPlayingMethodologyZones(
+// Get team zones (v2/v3 format with auto-migration)
+export async function getTeamGameModelZones(
   clubId: string,
   teamId: string
-): Promise<{ data: PlayingMethodologyZones | null; error: string | null }> {
+): Promise<{ data: GameModelZones | null; error: string | null }> {
   const { data, error } = await supabase
-    .from('playing_methodology')
-    .select('zones')
+    .from('game_model')
+    .select('id, zones')
     .eq('club_id', clubId)
     .eq('team_id', teamId)
     .not('zones', 'is', null)
@@ -1024,25 +1326,36 @@ export async function getTeamPlayingMethodologyZones(
     return { data: null, error: null }
   }
 
-  // Check if it's in v2 format
-  if (isPlayingMethodologyZonesV2(data.zones)) {
-    return { data: data.zones, error: null }
+  // Check if it's in v2+ format
+  if (isGameModelZonesV2(data.zones)) {
+    // Migrate to v3 if needed (converts single objects to arrays)
+    const { data: migratedZones, migrated } = migrateGameModelZonesToV3(data.zones)
+
+    // If migration occurred, save the migrated data
+    if (migrated && data.id) {
+      await supabase
+        .from('game_model')
+        .update({ zones: migratedZones as unknown as Json })
+        .eq('id', data.id)
+    }
+
+    return { data: migratedZones, error: null }
   }
 
-  // Legacy format or invalid - treat as no zones
+  // Legacy v1 format or invalid - treat as no zones
   return { data: null, error: null }
 }
 
 // Save team zones (v2 format)
-export async function saveTeamPlayingMethodologyZonesV2(
+export async function saveTeamGameModelZonesV2(
   clubId: string,
   teamId: string,
   coachId: string,
-  zones: PlayingMethodologyZones
+  zones: GameModelZones
 ): Promise<{ error: string | null }> {
   // Check if team record exists
   const { data: existing } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .select('id')
     .eq('club_id', clubId)
     .eq('team_id', teamId)
@@ -1052,7 +1365,7 @@ export async function saveTeamPlayingMethodologyZonesV2(
   if (existing) {
     // Update existing record
     const { error } = await supabase
-      .from('playing_methodology')
+      .from('game_model')
       .update({ zones: zones as unknown as Json })
       .eq('id', existing.id)
 
@@ -1063,13 +1376,13 @@ export async function saveTeamPlayingMethodologyZonesV2(
   } else {
     // Create new team record
     const { error } = await supabase
-      .from('playing_methodology')
+      .from('game_model')
       .insert({
         club_id: clubId,
         team_id: teamId,
         created_by_coach_id: coachId,
-        title: 'Playing Methodology',
-        description: 'Team playing methodology',
+        title: 'Game Model',
+        description: 'Team game model',
         zones: zones as unknown as Json,
         display_order: 0,
         is_active: true,
@@ -1085,12 +1398,12 @@ export async function saveTeamPlayingMethodologyZonesV2(
 }
 
 // Legacy function - deprecated
-export async function getTeamPlayingMethodologyWithZones(
+export async function getTeamGameModelWithZones(
   clubId: string,
   teamId: string
 ): Promise<{ data: { zones: PitchZone[] } | null; error: string | null }> {
   const { data, error } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .select('zones')
     .eq('club_id', clubId)
     .eq('team_id', teamId)
@@ -1116,7 +1429,7 @@ export async function getTeamPlayingMethodologyWithZones(
 }
 
 // Legacy function - deprecated
-export async function saveTeamPlayingMethodologyZones(
+export async function saveTeamGameModelZones(
   clubId: string,
   teamId: string,
   coachId: string,
@@ -1124,7 +1437,7 @@ export async function saveTeamPlayingMethodologyZones(
 ): Promise<{ error: string | null }> {
   // Check if team record exists
   const { data: existing } = await supabase
-    .from('playing_methodology')
+    .from('game_model')
     .select('id')
     .eq('club_id', clubId)
     .eq('team_id', teamId)
@@ -1134,7 +1447,7 @@ export async function saveTeamPlayingMethodologyZones(
   if (existing) {
     // Update existing record
     const { error } = await supabase
-      .from('playing_methodology')
+      .from('game_model')
       .update({ zones: zones as unknown as Json })
       .eq('id', existing.id)
 
@@ -1145,13 +1458,13 @@ export async function saveTeamPlayingMethodologyZones(
   } else {
     // Create new team record
     const { error } = await supabase
-      .from('playing_methodology')
+      .from('game_model')
       .insert({
         club_id: clubId,
         team_id: teamId,
         created_by_coach_id: coachId,
-        title: 'Playing Methodology',
-        description: 'Team playing methodology',
+        title: 'Game Model',
+        description: 'Team game model',
         zones: zones as unknown as Json,
         display_order: 0,
         is_active: true,
@@ -1250,18 +1563,18 @@ export async function createTeamPositionalProfile(
 // Revert Operations (RPC calls)
 // ========================================
 
-export async function revertTeamPlayingMethodology(
+export async function revertTeamGameModel(
   teamId: string,
   clubId: string
 ): Promise<{ error: string | null }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase.rpc as any)('revert_team_playing_methodology', {
+  const { error } = await (supabase.rpc as any)('revert_team_game_model', {
     p_team_id: teamId,
     p_club_id: clubId,
   })
 
   if (error) {
-    console.error('Error reverting playing methodology:', error)
+    console.error('Error reverting game model:', error)
     return { error: error.message }
   }
 

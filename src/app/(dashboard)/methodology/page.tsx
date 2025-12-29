@@ -7,7 +7,7 @@ export default function MethodologyPage() {
   const router = useRouter()
 
   useEffect(() => {
-    router.replace('/methodology/playing')
+    router.replace('/methodology/game-model')
   }, [router])
 
   return null

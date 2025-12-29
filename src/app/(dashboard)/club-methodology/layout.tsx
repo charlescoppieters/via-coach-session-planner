@@ -9,14 +9,14 @@ import { useAuth } from '@/contexts/AuthContext'
 
 const methodologySections = [
   {
-    id: 'playing',
-    title: 'Playing Methodology',
+    id: 'game-model',
+    title: 'Game Model',
     description: 'How you want your team to play during matches',
-    href: '/club-methodology/playing',
+    href: '/club-methodology/game-model',
   },
   {
     id: 'training',
-    title: 'Training Methodology',
+    title: 'Training Syllabus',
     description: 'How you plan to train your players, including practice design, coaching style, and key themes',
     href: '/club-methodology/training',
   },
@@ -50,7 +50,7 @@ export default function ClubMethodologyLayout({
 
   const activeSection = methodologySections.find(section =>
     pathname.startsWith(section.href)
-  )?.id || 'playing'
+  )?.id || 'game-model'
 
   return (
     <div style={{

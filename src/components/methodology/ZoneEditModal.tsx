@@ -2,16 +2,16 @@
 
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { FaTimes, FaSave } from 'react-icons/fa'
+import { FaTimes, FaSave, FaPlus } from 'react-icons/fa'
 import { CgSpinnerAlt } from 'react-icons/cg'
 import { theme } from '@/styles/theme'
-import type { PlayingZone, ZoneState } from '@/types/database'
+import type { GameZone, ZoneBlock } from '@/types/database'
 
 interface ZoneEditModalProps {
-  zone: PlayingZone
+  zone: GameZone
   zoneNumber: number
   totalZones: number
-  onSave: (updatedZone: PlayingZone) => void
+  onSave: (updatedZone: GameZone) => void
   onClose: () => void
   isSaving?: boolean
 }
@@ -25,15 +25,15 @@ export function ZoneEditModal({
   isSaving = false,
 }: ZoneEditModalProps) {
   const [zoneName, setZoneName] = useState(zone.name)
-  const [inPossession, setInPossession] = useState<ZoneState>(zone.in_possession)
-  const [outOfPossession, setOutOfPossession] = useState<ZoneState>(zone.out_of_possession)
+  const [inPossessionBlocks, setInPossessionBlocks] = useState<ZoneBlock[]>(zone.in_possession)
+  const [outOfPossessionBlocks, setOutOfPossessionBlocks] = useState<ZoneBlock[]>(zone.out_of_possession)
   const [errors, setErrors] = useState<{ zoneName?: string }>({})
 
   // Reset state when zone changes
   useEffect(() => {
     setZoneName(zone.name)
-    setInPossession(zone.in_possession)
-    setOutOfPossession(zone.out_of_possession)
+    setInPossessionBlocks(zone.in_possession)
+    setOutOfPossessionBlocks(zone.out_of_possession)
     setErrors({})
   }, [zone])
 
@@ -49,21 +49,222 @@ export function ZoneEditModal({
       return
     }
 
-    const updatedZone: PlayingZone = {
+    // Clean up blocks - trim and filter out empty blocks
+    const cleanedInBlocks = inPossessionBlocks
+      .map((b) => ({ ...b, name: b.name.trim(), details: b.details.trim() }))
+      .filter((b) => b.name !== '' || b.details !== '')
+
+    const cleanedOutBlocks = outOfPossessionBlocks
+      .map((b) => ({ ...b, name: b.name.trim(), details: b.details.trim() }))
+      .filter((b) => b.name !== '' || b.details !== '')
+
+    const updatedZone: GameZone = {
       ...zone,
       name: zoneName.trim(),
-      in_possession: {
-        name: inPossession.name.trim(),
-        details: inPossession.details.trim(),
-      },
-      out_of_possession: {
-        name: outOfPossession.name.trim(),
-        details: outOfPossession.details.trim(),
-      },
+      in_possession: cleanedInBlocks,
+      out_of_possession: cleanedOutBlocks,
     }
 
     onSave(updatedZone)
   }
+
+  const addBlock = (type: 'in' | 'out') => {
+    const newBlock: ZoneBlock = {
+      id: `${zone.id}-${type}-${Date.now()}`,
+      name: '',
+      details: '',
+    }
+
+    if (type === 'in') {
+      setInPossessionBlocks([...inPossessionBlocks, newBlock])
+    } else {
+      setOutOfPossessionBlocks([...outOfPossessionBlocks, newBlock])
+    }
+  }
+
+  const removeBlock = (type: 'in' | 'out', blockId: string) => {
+    if (type === 'in') {
+      setInPossessionBlocks(inPossessionBlocks.filter((b) => b.id !== blockId))
+    } else {
+      setOutOfPossessionBlocks(outOfPossessionBlocks.filter((b) => b.id !== blockId))
+    }
+  }
+
+  const updateBlock = (type: 'in' | 'out', blockId: string, field: 'name' | 'details', value: string) => {
+    if (type === 'in') {
+      setInPossessionBlocks(
+        inPossessionBlocks.map((b) => (b.id === blockId ? { ...b, [field]: value } : b))
+      )
+    } else {
+      setOutOfPossessionBlocks(
+        outOfPossessionBlocks.map((b) => (b.id === blockId ? { ...b, [field]: value } : b))
+      )
+    }
+  }
+
+  const renderBlockList = (
+    type: 'in' | 'out',
+    title: string,
+    blocks: ZoneBlock[],
+    accentColor: string,
+    placeholder: string
+  ) => (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {/* Section Header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+          marginBottom: theme.spacing.md,
+        }}
+      >
+        <span
+          style={{
+            width: 12,
+            height: 12,
+            borderRadius: '50%',
+            backgroundColor: accentColor,
+          }}
+        />
+        <span
+          style={{
+            fontSize: theme.typography.fontSize.base,
+            fontWeight: theme.typography.fontWeight.semibold,
+            color: accentColor,
+          }}
+        >
+          {title}
+        </span>
+      </div>
+
+      {/* Block List */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: theme.spacing.md,
+        }}
+      >
+        {blocks.length === 0 ? (
+          <p
+            style={{
+              fontSize: theme.typography.fontSize.sm,
+              color: theme.colors.text.muted,
+              fontStyle: 'italic',
+              textAlign: 'center',
+              padding: theme.spacing.lg,
+              backgroundColor: theme.colors.background.secondary,
+              borderRadius: theme.borderRadius.md,
+              border: `1px dashed ${theme.colors.border.primary}`,
+            }}
+          >
+            No themes added yet
+          </p>
+        ) : (
+          blocks.map((block) => (
+            <div
+              key={block.id}
+              style={{
+                backgroundColor: theme.colors.background.secondary,
+                borderRadius: theme.borderRadius.md,
+                padding: theme.spacing.md,
+                border: `1px solid ${theme.colors.border.primary}`,
+              }}
+            >
+              {/* Theme Name Row */}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: theme.spacing.sm,
+                  marginBottom: theme.spacing.sm,
+                }}
+              >
+                <input
+                  type="text"
+                  value={block.name}
+                  onChange={(e) => updateBlock(type, block.id, 'name', e.target.value)}
+                  placeholder={placeholder}
+                  disabled={isSaving}
+                  style={{
+                    flex: 1,
+                    padding: theme.spacing.sm,
+                    backgroundColor: theme.colors.background.tertiary,
+                    border: `1px solid ${theme.colors.border.primary}`,
+                    borderRadius: theme.borderRadius.md,
+                    color: theme.colors.text.primary,
+                    fontSize: theme.typography.fontSize.sm,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeBlock(type, block.id)}
+                  disabled={isSaving}
+                  style={{
+                    padding: theme.spacing.sm,
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.colors.border.primary}`,
+                    borderRadius: theme.borderRadius.md,
+                    color: theme.colors.text.muted,
+                    cursor: isSaving ? 'not-allowed' : 'pointer',
+                    opacity: isSaving ? 0.5 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <FaTimes size={12} />
+                </button>
+              </div>
+
+              {/* Theme Details */}
+              <textarea
+                value={block.details}
+                onChange={(e) => updateBlock(type, block.id, 'details', e.target.value)}
+                placeholder="Describe the tactical objectives..."
+                disabled={isSaving}
+                rows={2}
+                style={{
+                  width: '100%',
+                  padding: theme.spacing.sm,
+                  backgroundColor: theme.colors.background.tertiary,
+                  border: `1px solid ${theme.colors.border.primary}`,
+                  borderRadius: theme.borderRadius.md,
+                  color: theme.colors.text.primary,
+                  fontSize: theme.typography.fontSize.sm,
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                }}
+              />
+            </div>
+          ))
+        )}
+
+        {/* Add Theme Button */}
+        <button
+          type="button"
+          onClick={() => addBlock(type)}
+          disabled={isSaving}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: theme.spacing.sm,
+            padding: theme.spacing.sm,
+            backgroundColor: 'transparent',
+            border: `1px dashed ${theme.colors.border.primary}`,
+            borderRadius: theme.borderRadius.md,
+            color: theme.colors.text.secondary,
+            fontSize: theme.typography.fontSize.sm,
+            cursor: isSaving ? 'not-allowed' : 'pointer',
+            opacity: isSaving ? 0.5 : 1,
+          }}
+        >
+          <FaPlus size={10} />
+          Add Theme
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <div
@@ -94,8 +295,8 @@ export function ZoneEditModal({
           backgroundColor: theme.colors.background.primary,
           borderRadius: theme.borderRadius.lg,
           width: '100%',
-          maxWidth: '600px',
-          maxHeight: '90vh',
+          maxWidth: '900px',
+          height: '90vh',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -132,7 +333,7 @@ export function ZoneEditModal({
                 marginTop: theme.spacing.xs,
               }}
             >
-              Configure zone name and tactics
+              Configure zone name and training themes
             </p>
           </div>
           <button
@@ -199,195 +400,27 @@ export function ZoneEditModal({
             )}
           </div>
 
-          {/* In Possession Section */}
+          {/* Two Column Layout for In/Out Possession */}
           <div
             style={{
-              marginBottom: theme.spacing.xl,
-              padding: theme.spacing.lg,
-              backgroundColor: theme.colors.background.secondary,
-              borderRadius: theme.borderRadius.md,
-              border: `1px solid ${theme.colors.border.primary}`,
+              display: 'flex',
+              gap: theme.spacing.xl,
             }}
           >
-            <h3
-              style={{
-                fontSize: theme.typography.fontSize.lg,
-                fontWeight: theme.typography.fontWeight.semibold,
-                color: theme.colors.gold.main,
-                marginTop: 0,
-                marginBottom: theme.spacing.md,
-                display: 'flex',
-                alignItems: 'center',
-                gap: theme.spacing.sm,
-              }}
-            >
-              <span
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%',
-                  backgroundColor: theme.colors.gold.main,
-                }}
-              />
-              In Possession
-            </h3>
-
-            <div style={{ marginBottom: theme.spacing.md }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.xs,
-                }}
-              >
-                Name
-              </label>
-              <input
-                type="text"
-                value={inPossession.name}
-                onChange={(e) => setInPossession({ ...inPossession, name: e.target.value })}
-                placeholder="e.g., Build Up, Progression, Final Third Entry"
-                disabled={isSaving}
-                style={{
-                  width: '100%',
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.primary,
-                  border: `1px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  color: theme.colors.text.primary,
-                  fontSize: theme.typography.fontSize.base,
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.xs,
-                }}
-              >
-                Details
-              </label>
-              <textarea
-                value={inPossession.details}
-                onChange={(e) => setInPossession({ ...inPossession, details: e.target.value })}
-                placeholder="Describe the tactical approach, player roles, and objectives when in possession in this zone..."
-                disabled={isSaving}
-                rows={4}
-                style={{
-                  width: '100%',
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.primary,
-                  border: `1px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  color: theme.colors.text.primary,
-                  fontSize: theme.typography.fontSize.base,
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Out of Possession Section */}
-          <div
-            style={{
-              padding: theme.spacing.lg,
-              backgroundColor: theme.colors.background.secondary,
-              borderRadius: theme.borderRadius.md,
-              border: `1px solid ${theme.colors.border.primary}`,
-            }}
-          >
-            <h3
-              style={{
-                fontSize: theme.typography.fontSize.lg,
-                fontWeight: theme.typography.fontWeight.semibold,
-                color: theme.colors.status.error,
-                marginTop: 0,
-                marginBottom: theme.spacing.md,
-                display: 'flex',
-                alignItems: 'center',
-                gap: theme.spacing.sm,
-              }}
-            >
-              <span
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%',
-                  backgroundColor: theme.colors.status.error,
-                }}
-              />
-              Out of Possession
-            </h3>
-
-            <div style={{ marginBottom: theme.spacing.md }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.xs,
-                }}
-              >
-                Name
-              </label>
-              <input
-                type="text"
-                value={outOfPossession.name}
-                onChange={(e) => setOutOfPossession({ ...outOfPossession, name: e.target.value })}
-                placeholder="e.g., High Press, Mid Block, Low Block"
-                disabled={isSaving}
-                style={{
-                  width: '100%',
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.primary,
-                  border: `1px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  color: theme.colors.text.primary,
-                  fontSize: theme.typography.fontSize.base,
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.xs,
-                }}
-              >
-                Details
-              </label>
-              <textarea
-                value={outOfPossession.details}
-                onChange={(e) => setOutOfPossession({ ...outOfPossession, details: e.target.value })}
-                placeholder="Describe the defensive approach, pressing triggers, and objectives when out of possession in this zone..."
-                disabled={isSaving}
-                rows={4}
-                style={{
-                  width: '100%',
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.primary,
-                  border: `1px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  color: theme.colors.text.primary,
-                  fontSize: theme.typography.fontSize.base,
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                }}
-              />
-            </div>
+            {renderBlockList(
+              'in',
+              'In Possession',
+              inPossessionBlocks,
+              theme.colors.gold.main,
+              'e.g., Build Up Play, Final Third Entry'
+            )}
+            {renderBlockList(
+              'out',
+              'Out of Possession',
+              outOfPossessionBlocks,
+              theme.colors.status.error,
+              'e.g., High Press, Recovery Run'
+            )}
           </div>
         </div>
 

@@ -3,10 +3,10 @@
 import React from 'react'
 import { FaEdit } from 'react-icons/fa'
 import { theme } from '@/styles/theme'
-import type { PlayingZone } from '@/types/database'
+import type { GameZone } from '@/types/database'
 
 interface ZoneCardProps {
-  zone: PlayingZone
+  zone: GameZone
   zoneNumber: number
   totalZones: number
   isSelected: boolean
@@ -91,7 +91,6 @@ export function ZoneCard({
               {zone.name}
             </span>
           </div>
-
         </div>
 
         {/* Edit button */}

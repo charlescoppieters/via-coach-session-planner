@@ -5,17 +5,19 @@ import { motion } from 'framer-motion'
 import { CgSpinnerAlt } from 'react-icons/cg'
 import { theme } from '@/styles/theme'
 import {
-  saveClubPlayingMethodologyZones,
+  saveClubGameModelZones,
   createDefaultZones,
-  type PlayingMethodologyZones,
-  type PlayingZone,
+  type GameModelZones,
+  type GameZone,
+  type MatchFormat,
 } from '@/lib/methodology'
 import { ZonePitchDisplay } from '@/components/methodology/ZonePitchDisplay'
 import { ZoneCountSelector } from '@/components/methodology/ZoneCountSelector'
 import { ZoneEditModal } from '@/components/methodology/ZoneEditModal'
 import { ZoneCard } from '@/components/methodology/ZoneCard'
+import { MatchFormatModal } from '@/components/methodology/MatchFormatModal'
 
-interface PlayingMethodologyStepProps {
+interface GameModelStepProps {
   clubId: string
   coachId: string
   onNext: () => void
@@ -23,18 +25,19 @@ interface PlayingMethodologyStepProps {
   onSkip: () => void
 }
 
-export const PlayingMethodologyStep: React.FC<PlayingMethodologyStepProps> = ({
+export const GameModelStep: React.FC<GameModelStepProps> = ({
   clubId,
   coachId,
   onNext,
   onBack,
   onSkip,
 }) => {
-  const [zones, setZones] = useState<PlayingMethodologyZones | null>(null)
+  const [zones, setZones] = useState<GameModelZones | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
-  const [editingZone, setEditingZone] = useState<PlayingZone | null>(null)
+  const [editingZone, setEditingZone] = useState<GameZone | null>(null)
+  const [showMatchFormatModal, setShowMatchFormatModal] = useState(false)
 
   // Handle zone count selection
   const handleZoneCountSelect = (count: 3 | 4) => {
@@ -43,20 +46,20 @@ export const PlayingMethodologyStep: React.FC<PlayingMethodologyStepProps> = ({
   }
 
   // Handle zone click on pitch
-  const handleZoneClick = (zone: PlayingZone) => {
+  const handleZoneClick = (zone: GameZone) => {
     setSelectedZoneId(zone.id)
   }
 
   // Handle zone edit
-  const handleEditZone = (zone: PlayingZone) => {
+  const handleEditZone = (zone: GameZone) => {
     setEditingZone(zone)
   }
 
   // Handle zone save (local update)
-  const handleSaveZone = (updatedZone: PlayingZone) => {
+  const handleSaveZone = (updatedZone: GameZone) => {
     if (!zones) return
 
-    const updatedZones: PlayingMethodologyZones = {
+    const updatedZones: GameModelZones = {
       ...zones,
       zones: zones.zones.map((z) => (z.id === updatedZone.id ? updatedZone : z)),
     }
@@ -71,6 +74,12 @@ export const PlayingMethodologyStep: React.FC<PlayingMethodologyStepProps> = ({
     setSelectedZoneId(null)
   }
 
+  // Handle match format change (local update, saved on Next)
+  const handleMatchFormatChange = (format: MatchFormat) => {
+    if (!zones) return
+    setZones({ ...zones, match_format: format })
+  }
+
   // Handle next (save and proceed)
   const handleNext = async () => {
     if (!zones) {
@@ -82,7 +91,7 @@ export const PlayingMethodologyStep: React.FC<PlayingMethodologyStepProps> = ({
     setIsSaving(true)
     setError('')
 
-    const { error: saveError } = await saveClubPlayingMethodologyZones(clubId, coachId, zones)
+    const { error: saveError } = await saveClubGameModelZones(clubId, coachId, zones)
 
     if (saveError) {
       setError(saveError)
@@ -95,7 +104,7 @@ export const PlayingMethodologyStep: React.FC<PlayingMethodologyStepProps> = ({
   }
 
   // Get zone number from zone
-  const getZoneNumber = (zone: PlayingZone): number => {
+  const getZoneNumber = (zone: GameZone): number => {
     return zone.order
   }
 
@@ -121,7 +130,7 @@ export const PlayingMethodologyStep: React.FC<PlayingMethodologyStepProps> = ({
             textAlign: 'center',
           }}
         >
-          Playing Methodology
+          Game Model
         </h2>
         <p
           style={{
@@ -255,7 +264,7 @@ export const PlayingMethodologyStep: React.FC<PlayingMethodologyStepProps> = ({
               marginBottom: theme.spacing.xs,
             }}
           >
-            Playing Methodology ({zones.zone_count} Zones)
+            Game Model ({zones.zone_count} Zones)
           </h2>
           <p
             style={{
@@ -266,22 +275,40 @@ export const PlayingMethodologyStep: React.FC<PlayingMethodologyStepProps> = ({
             Click a zone to edit its in-possession and out-of-possession details
           </p>
         </div>
-        <button
-          onClick={handleChangeZoneCount}
-          disabled={isSaving}
-          style={{
-            padding: `${theme.spacing.sm} ${theme.spacing.md}`,
-            backgroundColor: 'transparent',
-            color: theme.colors.text.secondary,
-            border: `1px solid ${theme.colors.border.primary}`,
-            borderRadius: theme.borderRadius.md,
-            fontSize: theme.typography.fontSize.sm,
-            cursor: isSaving ? 'not-allowed' : 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Change Zone Count
-        </button>
+        <div style={{ display: 'flex', gap: theme.spacing.md }}>
+          <button
+            onClick={() => setShowMatchFormatModal(true)}
+            disabled={isSaving}
+            style={{
+              padding: `${theme.spacing.sm} ${theme.spacing.md}`,
+              backgroundColor: 'transparent',
+              color: theme.colors.text.secondary,
+              border: `1px solid ${theme.colors.border.primary}`,
+              borderRadius: theme.borderRadius.md,
+              fontSize: theme.typography.fontSize.sm,
+              cursor: isSaving ? 'not-allowed' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {zones.match_format || '11v11'}
+          </button>
+          <button
+            onClick={handleChangeZoneCount}
+            disabled={isSaving}
+            style={{
+              padding: `${theme.spacing.sm} ${theme.spacing.md}`,
+              backgroundColor: 'transparent',
+              color: theme.colors.text.secondary,
+              border: `1px solid ${theme.colors.border.primary}`,
+              borderRadius: theme.borderRadius.md,
+              fontSize: theme.typography.fontSize.sm,
+              cursor: isSaving ? 'not-allowed' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Change Zone Count
+          </button>
+        </div>
       </div>
 
       {/* Error Message */}
@@ -423,6 +450,15 @@ export const PlayingMethodologyStep: React.FC<PlayingMethodologyStepProps> = ({
           onSave={handleSaveZone}
           onClose={() => setEditingZone(null)}
           isSaving={false}
+        />
+      )}
+
+      {/* Match Format Modal */}
+      {showMatchFormatModal && (
+        <MatchFormatModal
+          currentFormat={zones.match_format || '11v11'}
+          onSelect={handleMatchFormatChange}
+          onClose={() => setShowMatchFormatModal(false)}
         />
       )}
     </div>

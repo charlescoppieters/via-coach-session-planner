@@ -348,8 +348,6 @@ export const SidebarV2: React.FC = () => {
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      <Divider />
-
       {/* Bottom Navigation */}
       <div
         style={{

@@ -2,12 +2,12 @@
 
 import React from 'react'
 import { theme } from '@/styles/theme'
-import type { PlayingMethodologyZones, PlayingZone } from '@/types/database'
+import type { GameModelZones, GameZone } from '@/types/database'
 
 interface ZonePitchDisplayProps {
-  zones: PlayingMethodologyZones | null
+  zones: GameModelZones | null
   selectedZoneId: string | null
-  onZoneClick?: (zone: PlayingZone) => void
+  onZoneClick?: (zone: GameZone) => void
   showLabels?: boolean
   height?: number
 }

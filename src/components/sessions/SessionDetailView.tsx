@@ -86,7 +86,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
     fetchSession();
   }, [sessionId, mode]);
 
-  // TODO: Fetch methodology data from v2 tables (playing_methodology, training_methodology)
+  // TODO: Fetch methodology data from v2 tables (game_model, training_methodology)
   // For now, rules are empty until methodology migration is complete
   useEffect(() => {
     setGlobalRules([]);

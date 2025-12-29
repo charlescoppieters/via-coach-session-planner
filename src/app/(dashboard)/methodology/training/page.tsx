@@ -1,198 +1,285 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { FaPlus, FaTrash, FaChevronDown } from 'react-icons/fa'
+import { motion } from 'framer-motion'
+import { FaUndo } from 'react-icons/fa'
 import { CgSpinnerAlt } from 'react-icons/cg'
 import { theme } from '@/styles/theme'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTeam } from '@/contexts/TeamContext'
 import {
-  getClubTrainingMethodology,
-  getTeamTrainingMethodology,
-  getTeamTrainingRuleToggles,
-  toggleClubTrainingRule,
-  createTrainingMethodology,
-  updateTrainingMethodology,
-  deleteTrainingMethodology,
-  subscribeToTrainingMethodology,
-  type TrainingMethodology,
+  getTeamTrainingSyllabus,
+  getClubTrainingSyllabus,
+  saveTeamTrainingSyllabus,
+  revertTeamTrainingSyllabus,
+  createDefaultSyllabus,
+  getTeamGameModelZones,
+  getClubGameModelZones,
+  type TrainingSyllabus,
+  type SyllabusDay,
+  type SyllabusWeek,
 } from '@/lib/methodology'
+import type { GameModelZones } from '@/types/database'
+import { WeeklyCalendar } from '@/components/methodology/syllabus/WeeklyCalendar'
+import { DayEditModal } from '@/components/methodology/syllabus/DayEditModal'
 
-export default function MyTrainingMethodologyPage() {
+export default function TeamTrainingSyllabusPage() {
   const { club, coach } = useAuth()
-  const { selectedTeam, selectedTeamId } = useTeam()
-
-  const [clubRules, setClubRules] = useState<TrainingMethodology[]>([])
-  const [teamRules, setTeamRules] = useState<TrainingMethodology[]>([])
-  const [toggles, setToggles] = useState<Record<string, boolean>>({})
+  const { selectedTeamId } = useTeam()
+  const [syllabus, setSyllabus] = useState<TrainingSyllabus | null>(null)
+  const [zones, setZones] = useState<GameModelZones | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Edit state
-  const [editingRule, setEditingRule] = useState<TrainingMethodology | null>(null)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [editTitle, setEditTitle] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [isSaving, setIsSaving] = useState(false)
+  // Day edit state
+  const [editingDay, setEditingDay] = useState<{ weekId: string; dayOfWeek: number } | null>(null)
 
-  // Delete confirmation
-  const [deleteConfirmRule, setDeleteConfirmRule] = useState<TrainingMethodology | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+  // Revert confirmation
+  const [showRevertConfirm, setShowRevertConfirm] = useState(false)
 
-  // Collapsible state for club rules and team rules
-  const [isClubRulesExpanded, setIsClubRulesExpanded] = useState(false)
-  const [isTeamRulesExpanded, setIsTeamRulesExpanded] = useState(false)
-
-  const fetchRules = useCallback(async () => {
-    if (!club?.id || !selectedTeamId) return
+  // Fetch syllabus and zones
+  const fetchData = useCallback(async () => {
+    if (!club?.id || !selectedTeamId || !coach?.id) return
 
     setIsLoading(true)
+    setError('')
 
-    // Fetch club rules
-    const { data: clubData, error: clubError } = await getClubTrainingMethodology(club.id)
-    if (clubError) {
-      setError(clubError)
-    } else if (clubData) {
-      setClubRules(clubData)
+    // Fetch team syllabus and zones
+    const [syllabusResult, zonesResult] = await Promise.all([
+      getTeamTrainingSyllabus(club.id, selectedTeamId),
+      getTeamGameModelZones(club.id, selectedTeamId),
+    ])
+
+    // Handle zones - fall back to club zones if no team zones
+    let currentZones: GameModelZones | null = null
+    if (zonesResult.error) {
+      console.error('Error fetching team zones:', zonesResult.error)
+      const clubZonesResult = await getClubGameModelZones(club.id)
+      if (!clubZonesResult.error) {
+        currentZones = clubZonesResult.data
+      }
+    } else if (!zonesResult.data) {
+      const clubZonesResult = await getClubGameModelZones(club.id)
+      if (!clubZonesResult.error) {
+        currentZones = clubZonesResult.data
+      }
+    } else {
+      currentZones = zonesResult.data
     }
+    setZones(currentZones)
 
-    // Fetch team rules
-    const { data: teamData, error: teamError } = await getTeamTrainingMethodology(club.id, selectedTeamId)
-    if (teamError) {
-      setError(teamError)
-    } else if (teamData) {
-      setTeamRules(teamData)
+    // Handle syllabus - auto-create if none exists and zones are configured
+    if (syllabusResult.error) {
+      setError(syllabusResult.error)
+    } else if (!syllabusResult.data && currentZones && currentZones.zones.length > 0) {
+      // Auto-create syllabus (inherit from club or create default)
+      const { data: clubSyllabus } = await getClubTrainingSyllabus(club.id)
+      const newSyllabus = clubSyllabus || createDefaultSyllabus()
+      const { error: saveError } = await saveTeamTrainingSyllabus(club.id, selectedTeamId, coach.id, newSyllabus)
+      if (saveError) {
+        setError(saveError)
+      } else {
+        setSyllabus(newSyllabus)
+      }
+    } else {
+      setSyllabus(syllabusResult.data)
     }
-
-    // Fetch toggles
-    const { data: toggleData } = await getTeamTrainingRuleToggles(selectedTeamId)
-    const toggleMap: Record<string, boolean> = {}
-
-    // Default all club rules to enabled
-    clubData?.forEach((rule) => {
-      toggleMap[rule.id] = true
-    })
-
-    // Override with actual toggle values
-    toggleData?.forEach((toggle) => {
-      toggleMap[toggle.training_rule_id] = toggle.is_enabled
-    })
-
-    setToggles(toggleMap)
 
     setIsLoading(false)
-  }, [club?.id, selectedTeamId])
+  }, [club?.id, selectedTeamId, coach?.id])
 
   useEffect(() => {
-    fetchRules()
-  }, [fetchRules])
+    fetchData()
+  }, [fetchData])
 
-  // Realtime subscriptions
-  useEffect(() => {
+  // Revert to club syllabus
+  const handleRevertToClub = async () => {
     if (!club?.id || !selectedTeamId) return
-
-    // Subscribe to club rules
-    const unsubscribeClub = subscribeToTrainingMethodology(club.id, null, () => {
-      fetchRules()
-    })
-
-    // Subscribe to team rules
-    const unsubscribeTeam = subscribeToTrainingMethodology(club.id, selectedTeamId, () => {
-      fetchRules()
-    })
-
-    return () => {
-      unsubscribeClub()
-      unsubscribeTeam()
-    }
-  }, [club?.id, selectedTeamId, fetchRules])
-
-  const handleAddRule = () => {
-    setEditingRule(null)
-    setEditTitle('')
-    setEditDescription('')
-    setIsEditModalOpen(true)
-  }
-
-  const handleEditRule = (rule: TrainingMethodology) => {
-    setEditingRule(rule)
-    setEditTitle(rule.title)
-    setEditDescription(rule.description || '')
-    setIsEditModalOpen(true)
-  }
-
-  const handleSaveRule = async () => {
-    if (!club?.id || !coach?.id || !selectedTeamId || !editTitle.trim()) return
 
     setIsSaving(true)
     setError('')
+    setShowRevertConfirm(false)
 
-    if (editingRule) {
-      // Update existing rule
-      const { error } = await updateTrainingMethodology(editingRule.id, {
-        title: editTitle.trim(),
-        description: editDescription.trim(),
-      })
+    const { error } = await revertTeamTrainingSyllabus(selectedTeamId, club.id)
 
-      if (error) {
-        setError(error)
-      } else {
-        await fetchRules()
-        setIsEditModalOpen(false)
-      }
+    if (error) {
+      setError(error)
     } else {
-      // Create new team rule
-      const { error } = await createTrainingMethodology(
-        club.id,
-        coach.id,
-        editTitle.trim(),
-        editDescription.trim(),
-        selectedTeamId // Pass team ID for team-specific rules
-      )
-
-      if (error) {
-        setError(error)
-      } else {
-        await fetchRules()
-        setIsEditModalOpen(false)
-      }
+      // Refresh data
+      await fetchData()
     }
 
     setIsSaving(false)
   }
 
-  const handleDeleteRule = async () => {
-    if (!deleteConfirmRule) return
+  // Add a week
+  const handleAddWeek = async () => {
+    if (!club?.id || !coach?.id || !selectedTeamId || !syllabus) return
 
-    setIsDeleting(true)
-    const { error } = await deleteTrainingMethodology(deleteConfirmRule.id)
+    setIsSaving(true)
+    setError('')
+
+    const newWeek: SyllabusWeek = {
+      id: crypto.randomUUID(),
+      order: syllabus.weeks.length + 1,
+      days: [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
+        dayOfWeek: dayOfWeek as SyllabusDay['dayOfWeek'],
+        theme: null,
+        comments: null,
+      })),
+    }
+
+    const updatedSyllabus: TrainingSyllabus = {
+      ...syllabus,
+      weeks: [...syllabus.weeks, newWeek],
+    }
+
+    const { error } = await saveTeamTrainingSyllabus(
+      club.id,
+      selectedTeamId,
+      coach.id,
+      updatedSyllabus
+    )
 
     if (error) {
       setError(error)
     } else {
-      await fetchRules()
+      setSyllabus(updatedSyllabus)
     }
 
-    setIsDeleting(false)
-    setDeleteConfirmRule(null)
+    setIsSaving(false)
   }
 
-  const handleToggleRule = async (ruleId: string) => {
-    if (!selectedTeamId) return
+  // Remove a week
+  const handleRemoveWeek = async (weekId: string) => {
+    if (!club?.id || !coach?.id || !selectedTeamId || !syllabus || syllabus.weeks.length <= 1)
+      return
 
-    const newValue = !toggles[ruleId]
+    setIsSaving(true)
+    setError('')
 
-    // Optimistically update UI
-    setToggles((prev) => ({ ...prev, [ruleId]: newValue }))
+    const updatedWeeks = syllabus.weeks
+      .filter((w) => w.id !== weekId)
+      .map((w, index) => ({ ...w, order: index + 1 }))
 
-    const { error } = await toggleClubTrainingRule(selectedTeamId, ruleId, newValue)
+    const updatedSyllabus: TrainingSyllabus = {
+      ...syllabus,
+      weeks: updatedWeeks,
+    }
+
+    const { error } = await saveTeamTrainingSyllabus(
+      club.id,
+      selectedTeamId,
+      coach.id,
+      updatedSyllabus
+    )
 
     if (error) {
-      // Revert on error
-      setToggles((prev) => ({ ...prev, [ruleId]: !newValue }))
       setError(error)
+    } else {
+      setSyllabus(updatedSyllabus)
     }
+
+    setIsSaving(false)
+  }
+
+  // Reorder weeks
+  const handleReorderWeeks = async (reorderedWeeks: SyllabusWeek[]) => {
+    if (!club?.id || !coach?.id || !selectedTeamId || !syllabus) return
+
+    const previousSyllabus = syllabus
+    const updatedSyllabus: TrainingSyllabus = {
+      ...syllabus,
+      weeks: reorderedWeeks,
+    }
+
+    // Optimistic update
+    setSyllabus(updatedSyllabus)
+    setIsSaving(true)
+    setError('')
+
+    const { error } = await saveTeamTrainingSyllabus(
+      club.id,
+      selectedTeamId,
+      coach.id,
+      updatedSyllabus
+    )
+
+    if (error) {
+      setError(error)
+      setSyllabus(previousSyllabus) // Revert on error
+    }
+
+    setIsSaving(false)
+  }
+
+  // Handle day click
+  const handleDayClick = (weekId: string, dayOfWeek: number) => {
+    setEditingDay({ weekId, dayOfWeek })
+  }
+
+  // Get day data for editing
+  const getEditingDayData = (): SyllabusDay | null => {
+    if (!editingDay || !syllabus) return null
+
+    const week = syllabus.weeks.find((w) => w.id === editingDay.weekId)
+    if (!week) return null
+
+    return (
+      week.days.find((d) => d.dayOfWeek === editingDay.dayOfWeek) || {
+        dayOfWeek: editingDay.dayOfWeek as SyllabusDay['dayOfWeek'],
+        theme: null,
+        comments: null,
+      }
+    )
+  }
+
+  // Get week number for editing
+  const getEditingWeekNumber = (): number => {
+    if (!editingDay || !syllabus) return 1
+
+    const week = syllabus.weeks.find((w) => w.id === editingDay.weekId)
+    return week?.order || 1
+  }
+
+  // Save day changes
+  const handleSaveDay = async (updatedDay: SyllabusDay) => {
+    if (!club?.id || !coach?.id || !selectedTeamId || !syllabus || !editingDay) return
+
+    setIsSaving(true)
+    setError('')
+
+    const updatedSyllabus: TrainingSyllabus = {
+      ...syllabus,
+      weeks: syllabus.weeks.map((week) => {
+        if (week.id !== editingDay.weekId) return week
+
+        const existingDayIndex = week.days.findIndex((d) => d.dayOfWeek === updatedDay.dayOfWeek)
+        const updatedDays =
+          existingDayIndex >= 0
+            ? week.days.map((d, i) => (i === existingDayIndex ? updatedDay : d))
+            : [...week.days, updatedDay]
+
+        return { ...week, days: updatedDays }
+      }),
+    }
+
+    const { error } = await saveTeamTrainingSyllabus(
+      club.id,
+      selectedTeamId,
+      coach.id,
+      updatedSyllabus
+    )
+
+    if (error) {
+      setError(error)
+    } else {
+      setSyllabus(updatedSyllabus)
+      setEditingDay(null)
+    }
+
+    setIsSaving(false)
   }
 
   if (isLoading) {
@@ -203,6 +290,7 @@ export default function MyTrainingMethodologyPage() {
           alignItems: 'center',
           justifyContent: 'center',
           height: '100%',
+          minHeight: '400px',
         }}
       >
         <motion.div
@@ -215,14 +303,10 @@ export default function MyTrainingMethodologyPage() {
     )
   }
 
-  return (
-    <div>
-      {/* Header */}
-      <div
-        style={{
-          marginBottom: theme.spacing.xl,
-        }}
-      >
+  // No zones configured - show warning
+  if (!zones || !zones.zones || zones.zones.length === 0) {
+    return (
+      <div>
         <h1
           style={{
             fontSize: theme.typography.fontSize['2xl'],
@@ -231,538 +315,217 @@ export default function MyTrainingMethodologyPage() {
             marginBottom: theme.spacing.sm,
           }}
         >
-          Training Methodology
+          Training Syllabus
         </h1>
         <p
           style={{
             fontSize: theme.typography.fontSize.base,
             color: theme.colors.text.secondary,
+            marginBottom: theme.spacing.xl,
           }}
         >
-          How you plan to train your players, including practice design, coaching style, and key themes
+          Plan your weekly training themes based on your Game Model
         </p>
-      </div>
 
-      {/* Error Message */}
-      {error && (
         <div
           style={{
-            padding: theme.spacing.md,
-            backgroundColor: 'rgba(220, 53, 69, 0.1)',
-            border: `1px solid ${theme.colors.status.error}`,
-            borderRadius: theme.borderRadius.md,
-            color: theme.colors.status.error,
-            marginBottom: theme.spacing.lg,
+            padding: theme.spacing.xl,
+            backgroundColor: theme.colors.background.tertiary,
+            borderRadius: theme.borderRadius.lg,
+            textAlign: 'center',
           }}
         >
-          {error}
-        </div>
-      )}
-
-      {/* Rules List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.lg }}>
-        {/* Club Rules Section (Collapsible) */}
-        {clubRules.length > 0 && (
-          <div
+          <p
             style={{
-              backgroundColor: theme.colors.background.secondary,
-              border: '1px solid rgba(68, 68, 68, 0.3)',
-              borderRadius: theme.borderRadius.lg,
-              overflow: 'hidden',
+              fontSize: theme.typography.fontSize.lg,
+              color: theme.colors.text.primary,
+              marginBottom: theme.spacing.md,
             }}
           >
-            {/* Collapsible Header */}
-            <button
-              onClick={() => setIsClubRulesExpanded(!isClubRulesExpanded)}
+            Configure your Game Model first
+          </p>
+          <p
+            style={{
+              fontSize: theme.typography.fontSize.base,
+              color: theme.colors.text.secondary,
+            }}
+          >
+            The Training Syllabus uses themes from your Game Model zones. Please set up your Game
+            Model with in-possession and out-of-possession blocks before creating your syllabus.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // No syllabus yet (zones not configured) - show message
+  if (!syllabus) {
+    return (
+      <div>
+        <h1
+          style={{
+            fontSize: theme.typography.fontSize['2xl'],
+            fontWeight: theme.typography.fontWeight.bold,
+            color: theme.colors.text.primary,
+            marginBottom: theme.spacing.sm,
+          }}
+        >
+          Training Syllabus
+        </h1>
+        <p
+          style={{
+            fontSize: theme.typography.fontSize.base,
+            color: theme.colors.text.secondary,
+            marginBottom: theme.spacing.xl,
+          }}
+        >
+          Plan your weekly training themes based on your Game Model
+        </p>
+
+        <div
+          style={{
+            padding: theme.spacing.xl,
+            backgroundColor: theme.colors.background.tertiary,
+            borderRadius: theme.borderRadius.lg,
+            textAlign: 'center',
+          }}
+        >
+          <p
+            style={{
+              fontSize: theme.typography.fontSize.base,
+              color: theme.colors.text.secondary,
+            }}
+          >
+            Configure your Game Model to get started with your training syllabus.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Syllabus exists - show calendar
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {/* Header - Fixed */}
+      <div
+        style={{
+          flexShrink: 0,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: theme.spacing.xl,
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              fontSize: theme.typography.fontSize['2xl'],
+              fontWeight: theme.typography.fontWeight.bold,
+              color: theme.colors.text.primary,
+              marginBottom: theme.spacing.sm,
+            }}
+          >
+            Training Syllabus
+          </h1>
+          <p
+            style={{
+              fontSize: theme.typography.fontSize.base,
+              color: theme.colors.text.secondary,
+            }}
+          >
+            Click any day to assign a training theme from your Game Model
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: theme.spacing.lg }}>
+          {/* Saving indicator */}
+          {isSaving && (
+            <div
               style={{
-                width: '100%',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: theme.spacing.lg,
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                borderBottom: isClubRulesExpanded ? `1px solid rgba(68, 68, 68, 0.3)` : 'none',
+                gap: theme.spacing.sm,
+                color: theme.colors.text.muted,
+                fontSize: theme.typography.fontSize.sm,
               }}
             >
-              <h3
-                style={{
-                  fontSize: theme.typography.fontSize.base,
-                  fontWeight: theme.typography.fontWeight.semibold,
-                  color: theme.colors.text.primary,
-                  margin: 0,
-                  flex: 1,
-                  textAlign: 'left',
-                }}
+              <motion.span
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                style={{ display: 'inline-flex' }}
               >
-                Club Methodology
-              </h3>
-              <motion.div
-                animate={{ rotate: isClubRulesExpanded ? 180 : 0 }}
-                transition={{ duration: 0.2 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: theme.borderRadius.md,
-                  backgroundColor: theme.colors.background.tertiary,
-                }}
-              >
-                <FaChevronDown size={12} color={theme.colors.text.secondary} />
-              </motion.div>
-            </button>
+                <CgSpinnerAlt size={14} />
+              </motion.span>
+              Saving...
+            </div>
+          )}
 
-            {/* Collapsible Content */}
-            <AnimatePresence initial={false}>
-              {isClubRulesExpanded && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2, ease: 'easeInOut' }}
-                  style={{ overflow: 'hidden' }}
-                >
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {clubRules.map((rule, index) => {
-                      const isEnabled = toggles[rule.id] !== false
-                      return (
-                        <div
-                          key={rule.id}
-                          style={{
-                            padding: theme.spacing.lg,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: theme.spacing.lg,
-                            opacity: isEnabled ? 1 : 0.5,
-                            transition: theme.transitions.fast,
-                            borderBottom: index < clubRules.length - 1 ? `1px solid rgba(68, 68, 68, 0.2)` : 'none',
-                          }}
-                        >
-                          {/* Content */}
-                          <div style={{ flex: 1 }}>
-                            <h4
-                              style={{
-                                fontSize: theme.typography.fontSize.base,
-                                fontWeight: theme.typography.fontWeight.medium,
-                                color: theme.colors.text.primary,
-                                marginBottom: rule.description ? theme.spacing.xs : 0,
-                              }}
-                            >
-                              {rule.title}
-                            </h4>
-                            {rule.description && (
-                              <p
-                                style={{
-                                  fontSize: theme.typography.fontSize.sm,
-                                  color: theme.colors.text.secondary,
-                                  lineHeight: 1.5,
-                                  margin: 0,
-                                }}
-                              >
-                                {rule.description}
-                              </p>
-                            )}
-                          </div>
+          {/* Revert to Club button */}
+          <button
+            onClick={() => setShowRevertConfirm(true)}
+            disabled={isSaving}
+            style={{
+              padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+              backgroundColor: 'transparent',
+              color: theme.colors.gold.main,
+              border: `1px solid ${theme.colors.gold.main}`,
+              borderRadius: theme.borderRadius.md,
+              fontSize: theme.typography.fontSize.sm,
+              cursor: isSaving ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+              opacity: isSaving ? 0.5 : 1,
+            }}
+          >
+            <FaUndo size={12} />
+            Revert to Club
+          </button>
+        </div>
+      </div>
 
-                          {/* Toggle Switch */}
-                          <div
-                            onClick={() => handleToggleRule(rule.id)}
-                            style={{
-                              width: '44px',
-                              height: '24px',
-                              backgroundColor: isEnabled
-                                ? theme.colors.gold.main
-                                : theme.colors.background.tertiary,
-                              borderRadius: '12px',
-                              position: 'relative',
-                              cursor: 'pointer',
-                              flexShrink: 0,
-                              transition: theme.transitions.fast,
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: '20px',
-                                height: '20px',
-                                backgroundColor: theme.colors.text.primary,
-                                borderRadius: '50%',
-                                position: 'absolute',
-                                top: '2px',
-                                left: isEnabled ? '22px' : '2px',
-                                transition: theme.transitions.fast,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+      {/* Scrollable Content */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {/* Error Message */}
+        {error && (
+          <div
+            style={{
+              padding: theme.spacing.md,
+              backgroundColor: 'rgba(220, 53, 69, 0.1)',
+              border: `1px solid ${theme.colors.status.error}`,
+              borderRadius: theme.borderRadius.md,
+              color: theme.colors.status.error,
+              marginBottom: theme.spacing.lg,
+            }}
+          >
+            {error}
           </div>
         )}
 
-        {/* Team Rules Section (Collapsible) */}
-        <div
-          style={{
-            backgroundColor: theme.colors.background.secondary,
-            border: '1px solid rgba(68, 68, 68, 0.3)',
-            borderRadius: theme.borderRadius.lg,
-            overflow: 'hidden',
-          }}
-        >
-          {/* Collapsible Header */}
-          <button
-            onClick={() => setIsTeamRulesExpanded(!isTeamRulesExpanded)}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: theme.spacing.lg,
-              backgroundColor: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              borderBottom: isTeamRulesExpanded ? `1px solid rgba(68, 68, 68, 0.3)` : 'none',
-            }}
-          >
-            <h3
-              style={{
-                fontSize: theme.typography.fontSize.base,
-                fontWeight: theme.typography.fontWeight.semibold,
-                color: theme.colors.text.primary,
-                margin: 0,
-                flex: 1,
-                textAlign: 'left',
-              }}
-            >
-              Team Methodology
-            </h3>
-            <motion.div
-              animate={{ rotate: isTeamRulesExpanded ? 180 : 0 }}
-              transition={{ duration: 0.2 }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '32px',
-                height: '32px',
-                borderRadius: theme.borderRadius.md,
-                backgroundColor: theme.colors.background.tertiary,
-              }}
-            >
-              <FaChevronDown size={12} color={theme.colors.text.secondary} />
-            </motion.div>
-          </button>
-
-          {/* Collapsible Content */}
-          <AnimatePresence initial={false}>
-            {isTeamRulesExpanded && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: 'easeInOut' }}
-                style={{ overflow: 'hidden' }}
-              >
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {teamRules.map((rule, index) => (
-                    <div
-                      key={rule.id}
-                      style={{
-                        padding: theme.spacing.lg,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: theme.spacing.lg,
-                        borderBottom: index < teamRules.length - 1 ? `1px solid rgba(68, 68, 68, 0.2)` : 'none',
-                      }}
-                    >
-                      {/* Content */}
-                      <div style={{ flex: 1 }}>
-                        <h4
-                          style={{
-                            fontSize: theme.typography.fontSize.base,
-                            fontWeight: theme.typography.fontWeight.medium,
-                            color: theme.colors.text.primary,
-                            marginBottom: rule.description ? theme.spacing.xs : 0,
-                          }}
-                        >
-                          {rule.title}
-                        </h4>
-                        {rule.description && (
-                          <p
-                            style={{
-                              fontSize: theme.typography.fontSize.sm,
-                              color: theme.colors.text.secondary,
-                              lineHeight: 1.5,
-                              margin: 0,
-                            }}
-                          >
-                            {rule.description}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Edit Button */}
-                      <button
-                        onClick={() => handleEditRule(rule)}
-                        style={{
-                          padding: `${theme.spacing.sm} ${theme.spacing.md}`,
-                          backgroundColor: theme.colors.background.tertiary,
-                          color: theme.colors.text.primary,
-                          border: `1px solid ${theme.colors.border.primary}`,
-                          borderRadius: theme.borderRadius.md,
-                          fontSize: theme.typography.fontSize.sm,
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                        }}
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  ))}
-
-                  {/* Add Rule Button inside the collapsible */}
-                  <button
-                    onClick={handleAddRule}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: theme.spacing.sm,
-                      padding: theme.spacing.lg,
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      borderTop: teamRules.length > 0 ? `1px solid rgba(68, 68, 68, 0.2)` : 'none',
-                      color: theme.colors.text.secondary,
-                      fontSize: theme.typography.fontSize.sm,
-                      cursor: 'pointer',
-                      transition: theme.transitions.fast,
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = theme.colors.gold.main
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = theme.colors.text.secondary
-                    }}
-                  >
-                    <FaPlus size={12} />
-                    Add Team Rule
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        {/* Weekly Calendar */}
+        <WeeklyCalendar
+          syllabus={syllabus}
+          onDayClick={handleDayClick}
+          onAddWeek={handleAddWeek}
+          onRemoveWeek={handleRemoveWeek}
+          onReorderWeeks={handleReorderWeeks}
+        />
       </div>
 
-      {/* Edit Modal */}
-      {isEditModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: theme.spacing.lg,
-          }}
-          onClick={() => setIsEditModalOpen(false)}
-        >
-          <div
-            style={{
-              backgroundColor: theme.colors.background.primary,
-              borderRadius: theme.borderRadius.lg,
-              padding: theme.spacing.xl,
-              width: '100%',
-              maxWidth: '500px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2
-              style={{
-                fontSize: theme.typography.fontSize.xl,
-                fontWeight: theme.typography.fontWeight.bold,
-                color: theme.colors.text.primary,
-                marginBottom: theme.spacing.lg,
-              }}
-            >
-              {editingRule ? 'Edit Rule' : 'Add Team Rule'}
-            </h2>
-
-            <div style={{ marginBottom: theme.spacing.lg }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.sm,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Title
-              </label>
-              <input
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="e.g., Warm-up Protocol"
-                style={{
-                  width: '100%',
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.secondary,
-                  color: theme.colors.text.primary,
-                  border: `2px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  fontSize: theme.typography.fontSize.base,
-                  outline: 'none',
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = theme.colors.gold.main
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = theme.colors.border.primary
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: theme.spacing.xl }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.medium,
-                  color: theme.colors.text.secondary,
-                  marginBottom: theme.spacing.sm,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Description
-              </label>
-              <textarea
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Describe this training principle or methodology..."
-                rows={5}
-                style={{
-                  width: '100%',
-                  padding: theme.spacing.md,
-                  backgroundColor: theme.colors.background.secondary,
-                  color: theme.colors.text.primary,
-                  border: `2px solid ${theme.colors.border.primary}`,
-                  borderRadius: theme.borderRadius.md,
-                  fontSize: theme.typography.fontSize.base,
-                  outline: 'none',
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = theme.colors.gold.main
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = theme.colors.border.primary
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: theme.spacing.md, justifyContent: 'space-between' }}>
-              {editingRule ? (
-                <button
-                  onClick={() => {
-                    setIsEditModalOpen(false)
-                    setDeleteConfirmRule(editingRule)
-                  }}
-                  disabled={isSaving}
-                  style={{
-                    padding: `${theme.spacing.md} ${theme.spacing.xl}`,
-                    backgroundColor: 'transparent',
-                    color: theme.colors.status.error,
-                    border: `1px solid ${theme.colors.status.error}`,
-                    borderRadius: theme.borderRadius.md,
-                    fontSize: theme.typography.fontSize.base,
-                    cursor: isSaving ? 'not-allowed' : 'pointer',
-                    opacity: isSaving ? 0.5 : 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: theme.spacing.sm,
-                  }}
-                >
-                  <FaTrash size={14} />
-                  Delete
-                </button>
-              ) : (
-                <div />
-              )}
-              <div style={{ display: 'flex', gap: theme.spacing.md }}>
-                <button
-                  onClick={() => setIsEditModalOpen(false)}
-                  disabled={isSaving}
-                  style={{
-                    padding: `${theme.spacing.md} ${theme.spacing.xl}`,
-                    backgroundColor: theme.colors.background.tertiary,
-                    color: theme.colors.text.primary,
-                    border: 'none',
-                    borderRadius: theme.borderRadius.md,
-                    fontSize: theme.typography.fontSize.base,
-                    cursor: isSaving ? 'not-allowed' : 'pointer',
-                    opacity: isSaving ? 0.5 : 1,
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveRule}
-                  disabled={!editTitle.trim() || isSaving}
-                  style={{
-                    padding: `${theme.spacing.md} ${theme.spacing.xl}`,
-                    backgroundColor:
-                      editTitle.trim() && !isSaving
-                        ? theme.colors.gold.main
-                        : theme.colors.text.disabled,
-                    color: theme.colors.background.primary,
-                    border: 'none',
-                    borderRadius: theme.borderRadius.md,
-                    fontSize: theme.typography.fontSize.base,
-                    fontWeight: theme.typography.fontWeight.semibold,
-                    cursor: editTitle.trim() && !isSaving ? 'pointer' : 'not-allowed',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: theme.spacing.sm,
-                  }}
-                >
-                  {isSaving && (
-                    <motion.span
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                      style={{ display: 'inline-flex' }}
-                    >
-                      <CgSpinnerAlt size={16} />
-                    </motion.span>
-                  )}
-                  {isSaving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Day Edit Modal */}
+      {editingDay && zones && (
+        <DayEditModal
+          day={getEditingDayData()!}
+          weekNumber={getEditingWeekNumber()}
+          zones={zones.zones}
+          onSave={handleSaveDay}
+          onClose={() => setEditingDay(null)}
+          isSaving={isSaving}
+        />
       )}
 
-      {/* Delete Confirmation Modal */}
-      {deleteConfirmRule && (
+      {/* Revert Confirmation Modal */}
+      {showRevertConfirm && (
         <div
           style={{
             position: 'fixed',
@@ -777,15 +540,17 @@ export default function MyTrainingMethodologyPage() {
             zIndex: 1000,
             padding: theme.spacing.lg,
           }}
-          onClick={() => setDeleteConfirmRule(null)}
+          onClick={() => !isSaving && setShowRevertConfirm(false)}
         >
-          <div
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
             style={{
               backgroundColor: theme.colors.background.primary,
               borderRadius: theme.borderRadius.lg,
               padding: theme.spacing.xl,
               width: '100%',
-              maxWidth: '400px',
+              maxWidth: '450px',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -794,35 +559,28 @@ export default function MyTrainingMethodologyPage() {
                 fontSize: theme.typography.fontSize.xl,
                 fontWeight: theme.typography.fontWeight.bold,
                 color: theme.colors.text.primary,
+                marginTop: 0,
                 marginBottom: theme.spacing.md,
               }}
             >
-              Delete Rule
+              Revert to Club Syllabus
             </h2>
             <p
               style={{
                 fontSize: theme.typography.fontSize.base,
                 color: theme.colors.text.secondary,
                 marginBottom: theme.spacing.xl,
+                lineHeight: 1.6,
               }}
             >
-              Are you sure you want to delete &quot;{deleteConfirmRule.title}&quot;? This action
-              cannot be undone.
+              This will replace your team&apos;s training syllabus with the current club syllabus.
+              Any team-specific changes will be lost. This cannot be undone.
             </p>
 
             <div style={{ display: 'flex', gap: theme.spacing.md, justifyContent: 'flex-end' }}>
               <button
-                onClick={() => {
-                  const ruleToEdit = deleteConfirmRule
-                  setDeleteConfirmRule(null)
-                  if (ruleToEdit) {
-                    setEditingRule(ruleToEdit)
-                    setEditTitle(ruleToEdit.title)
-                    setEditDescription(ruleToEdit.description || '')
-                    setIsEditModalOpen(true)
-                  }
-                }}
-                disabled={isDeleting}
+                onClick={() => setShowRevertConfirm(false)}
+                disabled={isSaving}
                 style={{
                   padding: `${theme.spacing.md} ${theme.spacing.xl}`,
                   backgroundColor: theme.colors.background.tertiary,
@@ -830,30 +588,30 @@ export default function MyTrainingMethodologyPage() {
                   border: 'none',
                   borderRadius: theme.borderRadius.md,
                   fontSize: theme.typography.fontSize.base,
-                  cursor: isDeleting ? 'not-allowed' : 'pointer',
-                  opacity: isDeleting ? 0.5 : 1,
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                  opacity: isSaving ? 0.5 : 1,
                 }}
               >
                 Cancel
               </button>
               <button
-                onClick={handleDeleteRule}
-                disabled={isDeleting}
+                onClick={handleRevertToClub}
+                disabled={isSaving}
                 style={{
                   padding: `${theme.spacing.md} ${theme.spacing.xl}`,
-                  backgroundColor: theme.colors.status.error,
-                  color: theme.colors.text.primary,
+                  backgroundColor: theme.colors.gold.main,
+                  color: theme.colors.background.primary,
                   border: 'none',
                   borderRadius: theme.borderRadius.md,
                   fontSize: theme.typography.fontSize.base,
                   fontWeight: theme.typography.fontWeight.semibold,
-                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: theme.spacing.sm,
                 }}
               >
-                {isDeleting && (
+                {isSaving && (
                   <motion.span
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
@@ -862,10 +620,10 @@ export default function MyTrainingMethodologyPage() {
                     <CgSpinnerAlt size={16} />
                   </motion.span>
                 )}
-                {isDeleting ? 'Deleting...' : 'Delete'}
+                {isSaving ? 'Reverting...' : 'Revert to Club'}
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
     </div>

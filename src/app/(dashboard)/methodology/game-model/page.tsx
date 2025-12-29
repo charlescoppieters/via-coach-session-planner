@@ -2,50 +2,77 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { FaExchangeAlt } from 'react-icons/fa'
+import { FaExchangeAlt, FaUndo } from 'react-icons/fa'
 import { CgSpinnerAlt } from 'react-icons/cg'
 import { theme } from '@/styles/theme'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTeam } from '@/contexts/TeamContext'
 import {
-  getClubPlayingMethodologyZones,
-  saveClubPlayingMethodologyZones,
+  getTeamGameModelZones,
+  getClubGameModelZones,
+  saveTeamGameModelZonesV2,
+  revertTeamGameModel,
   createDefaultZones,
-  type PlayingMethodologyZones,
-  type PlayingZone,
+  type GameModelZones,
+  type GameZone,
+  type MatchFormat,
 } from '@/lib/methodology'
 import { ZonePitchDisplay } from '@/components/methodology/ZonePitchDisplay'
 import { ZoneCountSelector } from '@/components/methodology/ZoneCountSelector'
 import { ZoneEditModal } from '@/components/methodology/ZoneEditModal'
 import { ZoneCard } from '@/components/methodology/ZoneCard'
+import { MatchFormatModal } from '@/components/methodology/MatchFormatModal'
 
-export default function ClubPlayingMethodologyPage() {
+export default function TeamGameModelPage() {
   const { club, coach } = useAuth()
+  const { selectedTeamId } = useTeam()
   const [error, setError] = useState('')
 
   // Zone state
-  const [zones, setZones] = useState<PlayingMethodologyZones | null>(null)
+  const [zones, setZones] = useState<GameModelZones | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
 
   // UI state
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
-  const [editingZone, setEditingZone] = useState<PlayingZone | null>(null)
+  const [editingZone, setEditingZone] = useState<GameZone | null>(null)
   const [showChangeZonesConfirm, setShowChangeZonesConfirm] = useState(false)
+  const [showRevertConfirm, setShowRevertConfirm] = useState(false)
+  const [isReverting, setIsReverting] = useState(false)
+  const [showMatchFormatModal, setShowMatchFormatModal] = useState(false)
 
   // Fetch zones
   const fetchZones = useCallback(async () => {
-    if (!club?.id) return
+    if (!club?.id || !selectedTeamId) return
 
     setIsLoading(true)
-    const { data, error } = await getClubPlayingMethodologyZones(club.id)
-    if (error) {
-      console.error('Error fetching zones:', error)
-      setError(error)
-    } else {
-      setZones(data)
+
+    // First try to get team-specific zones
+    const { data: teamZones, error: teamError } = await getTeamGameModelZones(club.id, selectedTeamId)
+
+    if (teamError) {
+      console.error('Error fetching team zones:', teamError)
+      setError(teamError)
+      setIsLoading(false)
+      return
     }
+
+    if (teamZones) {
+      setZones(teamZones)
+    } else {
+      // If no team zones, try to inherit from club
+      const { data: clubZones } = await getClubGameModelZones(club.id)
+      if (clubZones && coach?.id) {
+        // Auto-copy club zones to team
+        await saveTeamGameModelZonesV2(club.id, selectedTeamId, coach.id, clubZones)
+        setZones(clubZones)
+      } else {
+        setZones(null)
+      }
+    }
+
     setIsLoading(false)
-  }, [club?.id])
+  }, [club?.id, selectedTeamId, coach?.id])
 
   useEffect(() => {
     fetchZones()
@@ -53,13 +80,13 @@ export default function ClubPlayingMethodologyPage() {
 
   // Handle zone count selection (initial setup)
   const handleZoneCountSelect = async (count: 3 | 4) => {
-    if (!club?.id || !coach?.id) return
+    if (!club?.id || !coach?.id || !selectedTeamId) return
 
     setIsSaving(true)
     setError('')
 
     const newZones = createDefaultZones(count)
-    const { error } = await saveClubPlayingMethodologyZones(club.id, coach.id, newZones)
+    const { error } = await saveTeamGameModelZonesV2(club.id, selectedTeamId, coach.id, newZones)
 
     if (error) {
       setError(error)
@@ -71,29 +98,29 @@ export default function ClubPlayingMethodologyPage() {
   }
 
   // Handle zone click on pitch
-  const handleZoneClick = (zone: PlayingZone) => {
+  const handleZoneClick = (zone: GameZone) => {
     setSelectedZoneId(zone.id)
   }
 
   // Handle zone edit
-  const handleEditZone = (zone: PlayingZone) => {
+  const handleEditZone = (zone: GameZone) => {
     setEditingZone(zone)
   }
 
   // Handle zone save
-  const handleSaveZone = async (updatedZone: PlayingZone) => {
-    if (!club?.id || !coach?.id || !zones) return
+  const handleSaveZone = async (updatedZone: GameZone) => {
+    if (!club?.id || !coach?.id || !selectedTeamId || !zones) return
 
     setIsSaving(true)
     setError('')
 
     // Update zones with the edited zone
-    const updatedZones: PlayingMethodologyZones = {
+    const updatedZones: GameModelZones = {
       ...zones,
       zones: zones.zones.map((z) => (z.id === updatedZone.id ? updatedZone : z)),
     }
 
-    const { error } = await saveClubPlayingMethodologyZones(club.id, coach.id, updatedZones)
+    const { error } = await saveTeamGameModelZonesV2(club.id, selectedTeamId, coach.id, updatedZones)
 
     if (error) {
       setError(error)
@@ -107,14 +134,14 @@ export default function ClubPlayingMethodologyPage() {
 
   // Handle zone count change (with confirmation)
   const handleChangeZoneCount = async (newCount: 3 | 4) => {
-    if (!club?.id || !coach?.id) return
+    if (!club?.id || !coach?.id || !selectedTeamId) return
 
     setIsSaving(true)
     setError('')
     setShowChangeZonesConfirm(false)
 
     const newZones = createDefaultZones(newCount)
-    const { error } = await saveClubPlayingMethodologyZones(club.id, coach.id, newZones)
+    const { error } = await saveTeamGameModelZonesV2(club.id, selectedTeamId, coach.id, newZones)
 
     if (error) {
       setError(error)
@@ -126,8 +153,50 @@ export default function ClubPlayingMethodologyPage() {
     setIsSaving(false)
   }
 
+  // Handle revert to club
+  const handleRevert = async () => {
+    if (!club?.id || !selectedTeamId) return
+
+    setIsReverting(true)
+    setError('')
+
+    const { error } = await revertTeamGameModel(selectedTeamId, club.id)
+
+    if (error) {
+      setError(error)
+    } else {
+      await fetchZones() // Refresh data
+    }
+
+    setIsReverting(false)
+    setShowRevertConfirm(false)
+  }
+
+  // Handle match format change
+  const handleMatchFormatChange = async (format: MatchFormat) => {
+    if (!club?.id || !coach?.id || !selectedTeamId || !zones) return
+
+    setIsSaving(true)
+    setError('')
+
+    const updatedZones: GameModelZones = {
+      ...zones,
+      match_format: format,
+    }
+
+    const { error } = await saveTeamGameModelZonesV2(club.id, selectedTeamId, coach.id, updatedZones)
+
+    if (error) {
+      setError(error)
+    } else {
+      setZones(updatedZones)
+    }
+
+    setIsSaving(false)
+  }
+
   // Get zone number from zone
-  const getZoneNumber = (zone: PlayingZone): number => {
+  const getZoneNumber = (zone: GameZone): number => {
     return zone.order
   }
 
@@ -165,7 +234,7 @@ export default function ClubPlayingMethodologyPage() {
             textAlign: 'center',
           }}
         >
-          Playing Methodology
+          Game Model
         </h1>
         <p
           style={{
@@ -230,6 +299,8 @@ export default function ClubPlayingMethodologyPage() {
           justifyContent: 'space-between',
           alignItems: 'flex-start',
           marginBottom: theme.spacing.xl,
+          flexWrap: 'wrap',
+          gap: theme.spacing.md,
         }}
       >
         <div>
@@ -241,7 +312,7 @@ export default function ClubPlayingMethodologyPage() {
               marginBottom: theme.spacing.sm,
             }}
           >
-            Playing Methodology
+            Game Model
           </h1>
           <p
             style={{
@@ -252,24 +323,64 @@ export default function ClubPlayingMethodologyPage() {
             Click a zone on the pitch or in the list below to view and edit details
           </p>
         </div>
-        <button
-          onClick={() => setShowChangeZonesConfirm(true)}
-          style={{
-            padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
-            backgroundColor: 'transparent',
-            color: theme.colors.text.primary,
-            border: `1px solid ${theme.colors.border.primary}`,
-            borderRadius: theme.borderRadius.md,
-            fontSize: theme.typography.fontSize.sm,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
-          }}
-        >
-          <FaExchangeAlt size={12} />
-          Change to {zones.zone_count === 3 ? '4' : '3'} Zones
-        </button>
+        <div style={{ display: 'flex', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setShowMatchFormatModal(true)}
+            style={{
+              padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+              backgroundColor: 'transparent',
+              color: theme.colors.gold.main,
+              border: `1px solid ${theme.colors.gold.main}`,
+              borderRadius: theme.borderRadius.md,
+              fontSize: theme.typography.fontSize.sm,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {zones.match_format || '11v11'}
+          </button>
+          <button
+            onClick={() => setShowRevertConfirm(true)}
+            style={{
+              padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+              backgroundColor: 'transparent',
+              color: theme.colors.text.primary,
+              border: `1px solid ${theme.colors.border.primary}`,
+              borderRadius: theme.borderRadius.md,
+              fontSize: theme.typography.fontSize.sm,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <FaUndo size={12} />
+            Revert to Club Model
+          </button>
+          <button
+            onClick={() => setShowChangeZonesConfirm(true)}
+            style={{
+              padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+              backgroundColor: 'transparent',
+              color: theme.colors.text.primary,
+              border: `1px solid ${theme.colors.border.primary}`,
+              borderRadius: theme.borderRadius.md,
+              fontSize: theme.typography.fontSize.sm,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <FaExchangeAlt size={12} />
+            Change to {zones.zone_count === 3 ? '4' : '3'} Zones
+          </button>
+        </div>
       </div>
 
       {/* Error Message */}
@@ -347,6 +458,15 @@ export default function ClubPlayingMethodologyPage() {
           onSave={handleSaveZone}
           onClose={() => setEditingZone(null)}
           isSaving={isSaving}
+        />
+      )}
+
+      {/* Match Format Modal */}
+      {showMatchFormatModal && (
+        <MatchFormatModal
+          currentFormat={zones.match_format || '11v11'}
+          onSelect={handleMatchFormatChange}
+          onClose={() => setShowMatchFormatModal(false)}
         />
       )}
 
@@ -428,7 +548,7 @@ export default function ClubPlayingMethodologyPage() {
                     marginBottom: theme.spacing.xs,
                   }}
                 >
-                  Zone {zone.order}: {zone.in_possession.name} / {zone.out_of_possession.name}
+                  Zone {zone.order}: {zone.name} ({zone.in_possession.length} in / {zone.out_of_possession.length} out)
                 </div>
               ))}
             </div>
@@ -477,6 +597,107 @@ export default function ClubPlayingMethodologyPage() {
                   </motion.span>
                 )}
                 {isSaving ? 'Changing...' : `Change to ${zones.zone_count === 3 ? 4 : 3} Zones`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Revert Confirmation Modal */}
+      {showRevertConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: theme.spacing.lg,
+          }}
+          onClick={() => !isReverting && setShowRevertConfirm(false)}
+        >
+          <div
+            style={{
+              backgroundColor: theme.colors.background.primary,
+              borderRadius: theme.borderRadius.lg,
+              padding: theme.spacing.xl,
+              width: '100%',
+              maxWidth: '450px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                fontSize: theme.typography.fontSize.xl,
+                fontWeight: theme.typography.fontWeight.bold,
+                color: theme.colors.text.primary,
+                marginTop: 0,
+                marginBottom: theme.spacing.md,
+              }}
+            >
+              Revert to Club Game Model
+            </h2>
+            <p
+              style={{
+                fontSize: theme.typography.fontSize.base,
+                color: theme.colors.text.secondary,
+                marginBottom: theme.spacing.xl,
+                lineHeight: 1.6,
+              }}
+            >
+              This will replace all team customizations with the current club methodology.
+              This cannot be undone.
+            </p>
+
+            <div style={{ display: 'flex', gap: theme.spacing.md, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowRevertConfirm(false)}
+                disabled={isReverting}
+                style={{
+                  padding: `${theme.spacing.md} ${theme.spacing.xl}`,
+                  backgroundColor: theme.colors.background.tertiary,
+                  color: theme.colors.text.primary,
+                  border: 'none',
+                  borderRadius: theme.borderRadius.md,
+                  fontSize: theme.typography.fontSize.base,
+                  cursor: isReverting ? 'not-allowed' : 'pointer',
+                  opacity: isReverting ? 0.5 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRevert}
+                disabled={isReverting}
+                style={{
+                  padding: `${theme.spacing.md} ${theme.spacing.xl}`,
+                  backgroundColor: theme.colors.status.error,
+                  color: theme.colors.text.primary,
+                  border: 'none',
+                  borderRadius: theme.borderRadius.md,
+                  fontSize: theme.typography.fontSize.base,
+                  fontWeight: theme.typography.fontWeight.semibold,
+                  cursor: isReverting ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: theme.spacing.sm,
+                }}
+              >
+                {isReverting && (
+                  <motion.span
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                    style={{ display: 'inline-flex' }}
+                  >
+                    <CgSpinnerAlt size={16} />
+                  </motion.span>
+                )}
+                {isReverting ? 'Reverting...' : 'Revert'}
               </button>
             </div>
           </div>

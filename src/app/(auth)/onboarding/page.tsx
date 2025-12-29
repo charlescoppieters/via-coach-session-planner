@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { WelcomeStep } from '@/components/onboarding/WelcomeStep'
 import { ClubSetupStep } from '@/components/onboarding/ClubSetupStep'
 import { ProfileSetupStep } from '@/components/onboarding/ProfileSetupStep'
-import { PlayingMethodologyStep } from '@/components/onboarding/PlayingMethodologyStep'
+import { GameModelStep } from '@/components/onboarding/GameModelStep'
 import { TrainingMethodologyStep } from '@/components/onboarding/TrainingMethodologyStep'
 import { PositionalProfilingStep } from '@/components/onboarding/PositionalProfilingStep'
 import { TeamCreationStep } from '@/components/onboarding/TeamCreationStep'
@@ -456,7 +456,7 @@ export default function OnboardingPage() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
             >
-              <PlayingMethodologyStep
+              <GameModelStep
                 clubId={club.id}
                 coachId={coach.id}
                 onNext={handlePlayingMethodologyNext}

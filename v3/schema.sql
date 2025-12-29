@@ -424,10 +424,10 @@ COMMENT ON COLUMN methodology_templates.template_type IS 'Type: playing, trainin
 COMMENT ON COLUMN methodology_templates.price_cents IS 'Price in cents for premium templates';
 
 -- ----------------------------------------
--- PLAYING METHODOLOGY
+-- GAME MODEL
 -- ----------------------------------------
 -- How teams should play during matches (zones/rules)
-CREATE TABLE playing_methodology (
+CREATE TABLE game_model (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     club_id UUID NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
     team_id UUID REFERENCES teams(id) ON DELETE CASCADE,
@@ -441,10 +441,10 @@ CREATE TABLE playing_methodology (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
-COMMENT ON TABLE playing_methodology IS 'Playing rules/zones. Club-level (team_id NULL) or team-specific.';
-COMMENT ON COLUMN playing_methodology.team_id IS 'NULL for club-level rules, set for team-specific rules.';
-COMMENT ON COLUMN playing_methodology.created_by_coach_id IS 'Coach who created this rule. Used for edit permissions.';
-COMMENT ON COLUMN playing_methodology.zones IS 'JSON array of pitch zones: [{id, x, y, width, height, title, description, color}]';
+COMMENT ON TABLE game_model IS 'Game model zones/rules. Club-level (team_id NULL) or team-specific.';
+COMMENT ON COLUMN game_model.team_id IS 'NULL for club-level rules, set for team-specific rules.';
+COMMENT ON COLUMN game_model.created_by_coach_id IS 'Coach who created this rule. Used for edit permissions.';
+COMMENT ON COLUMN game_model.zones IS 'JSON array of pitch zones: [{id, x, y, width, height, title, description, color}]';
 
 -- ----------------------------------------
 -- TRAINING METHODOLOGY
@@ -637,11 +637,11 @@ CREATE INDEX idx_system_defaults_active ON system_defaults(category, is_active) 
 CREATE INDEX idx_methodology_templates_type ON methodology_templates(template_type);
 CREATE INDEX idx_methodology_templates_active ON methodology_templates(is_active) WHERE is_active = true;
 
--- Playing Methodology
-CREATE INDEX idx_playing_methodology_club_id ON playing_methodology(club_id);
-CREATE INDEX idx_playing_methodology_team_id ON playing_methodology(team_id);
-CREATE INDEX idx_playing_methodology_club_level ON playing_methodology(club_id) WHERE team_id IS NULL;
-CREATE INDEX idx_playing_methodology_zones ON playing_methodology(club_id) WHERE zones IS NOT NULL;
+-- Game Model
+CREATE INDEX idx_game_model_club_id ON game_model(club_id);
+CREATE INDEX idx_game_model_team_id ON game_model(team_id);
+CREATE INDEX idx_game_model_club_level ON game_model(club_id) WHERE team_id IS NULL;
+CREATE INDEX idx_game_model_zones ON game_model(club_id) WHERE zones IS NOT NULL;
 
 -- Training Methodology
 CREATE INDEX idx_training_methodology_club_id ON training_methodology(club_id);
@@ -722,8 +722,8 @@ CREATE TRIGGER update_methodology_templates_updated_at
     BEFORE UPDATE ON methodology_templates
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_playing_methodology_updated_at
-    BEFORE UPDATE ON playing_methodology
+CREATE TRIGGER update_game_model_updated_at
+    BEFORE UPDATE ON game_model
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_training_methodology_updated_at
@@ -772,7 +772,7 @@ ALTER TABLE session_block_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE session_attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE system_defaults ENABLE ROW LEVEL SECURITY;
 ALTER TABLE methodology_templates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE playing_methodology ENABLE ROW LEVEL SECURITY;
+ALTER TABLE game_model ENABLE ROW LEVEL SECURITY;
 ALTER TABLE training_methodology ENABLE ROW LEVEL SECURITY;
 ALTER TABLE positional_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_facilities ENABLE ROW LEVEL SECURITY;
@@ -1385,11 +1385,11 @@ CREATE POLICY "methodology_templates_select" ON methodology_templates
 -- No insert/update/delete via RLS (managed by admin)
 
 -- ========================================
--- RLS POLICIES - PLAYING METHODOLOGY
+-- RLS POLICIES - GAME MODEL
 -- ========================================
 
--- Club members can view their club's methodology
-CREATE POLICY "playing_methodology_select" ON playing_methodology
+-- Club members can view their club's game model
+CREATE POLICY "game_model_select" ON game_model
     FOR SELECT USING (
         club_id IN (
             SELECT club_id FROM club_memberships
@@ -1398,14 +1398,14 @@ CREATE POLICY "playing_methodology_select" ON playing_methodology
     );
 
 -- Club-level: admin only. Team-level: assigned coaches or admin
-CREATE POLICY "playing_methodology_insert" ON playing_methodology
+CREATE POLICY "game_model_insert" ON game_model
     FOR INSERT WITH CHECK (
         created_by_coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
         AND (
             -- Club-level rule: must be admin
             (team_id IS NULL AND EXISTS (
                 SELECT 1 FROM club_memberships
-                WHERE club_id = playing_methodology.club_id
+                WHERE club_id = game_model.club_id
                 AND coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
                 AND role = 'admin'
             ))
@@ -1414,14 +1414,14 @@ CREATE POLICY "playing_methodology_insert" ON playing_methodology
             (team_id IS NOT NULL AND (
                 EXISTS (
                     SELECT 1 FROM club_memberships
-                    WHERE club_id = playing_methodology.club_id
+                    WHERE club_id = game_model.club_id
                     AND coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
                     AND role = 'admin'
                 )
                 OR
                 EXISTS (
                     SELECT 1 FROM team_coaches
-                    WHERE team_id = playing_methodology.team_id
+                    WHERE team_id = game_model.team_id
                     AND coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
                 )
             ))
@@ -1429,12 +1429,12 @@ CREATE POLICY "playing_methodology_insert" ON playing_methodology
     );
 
 -- Club-level: admin. Team-level: creator, assigned coach, or admin
-CREATE POLICY "playing_methodology_update" ON playing_methodology
+CREATE POLICY "game_model_update" ON game_model
     FOR UPDATE USING (
         -- Club-level: admin only
         (team_id IS NULL AND EXISTS (
             SELECT 1 FROM club_memberships
-            WHERE club_id = playing_methodology.club_id
+            WHERE club_id = game_model.club_id
             AND coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
             AND role = 'admin'
         ))
@@ -1445,7 +1445,7 @@ CREATE POLICY "playing_methodology_update" ON playing_methodology
             OR
             EXISTS (
                 SELECT 1 FROM club_memberships
-                WHERE club_id = playing_methodology.club_id
+                WHERE club_id = game_model.club_id
                 AND coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
                 AND role = 'admin'
             )
@@ -1453,11 +1453,11 @@ CREATE POLICY "playing_methodology_update" ON playing_methodology
     );
 
 -- Club-level: admin. Team-level: creator, assigned coach, or admin
-CREATE POLICY "playing_methodology_delete" ON playing_methodology
+CREATE POLICY "game_model_delete" ON game_model
     FOR DELETE USING (
         (team_id IS NULL AND EXISTS (
             SELECT 1 FROM club_memberships
-            WHERE club_id = playing_methodology.club_id
+            WHERE club_id = game_model.club_id
             AND coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
             AND role = 'admin'
         ))
@@ -1467,7 +1467,7 @@ CREATE POLICY "playing_methodology_delete" ON playing_methodology
             OR
             EXISTS (
                 SELECT 1 FROM club_memberships
-                WHERE club_id = playing_methodology.club_id
+                WHERE club_id = game_model.club_id
                 AND coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
                 AND role = 'admin'
             )
@@ -2631,22 +2631,22 @@ AS $$
 DECLARE
     club_zones JSONB;
 BEGIN
-    -- 1. Copy Playing Methodology (zones)
+    -- 1. Copy Game Model (zones)
     -- Get club's zones from the first record that has zones
     SELECT zones INTO club_zones
-    FROM playing_methodology
+    FROM game_model
     WHERE club_id = p_club_id
     AND team_id IS NULL
     AND zones IS NOT NULL
     LIMIT 1;
 
-    -- Create team playing methodology record with copied zones
+    -- Create team game model record with copied zones
     IF club_zones IS NOT NULL THEN
-        INSERT INTO playing_methodology (
+        INSERT INTO game_model (
             club_id, team_id, created_by_coach_id, title, description, zones, display_order, is_active
         )
         VALUES (
-            p_club_id, p_team_id, p_coach_id, 'Playing Methodology', 'Team playing methodology', club_zones, 0, true
+            p_club_id, p_team_id, p_coach_id, 'Game Model', 'Team game model', club_zones, 0, true
         )
         ON CONFLICT DO NOTHING;
     END IF;
@@ -2673,11 +2673,11 @@ $$;
 GRANT EXECUTE ON FUNCTION copy_club_methodology_to_team TO authenticated;
 
 -- ----------------------------------------
--- Revert Team Playing Methodology
+-- Revert Team Game Model
 -- ----------------------------------------
 -- Replaces team's zones with current club zones
 
-CREATE OR REPLACE FUNCTION revert_team_playing_methodology(
+CREATE OR REPLACE FUNCTION revert_team_game_model(
     p_team_id UUID,
     p_club_id UUID
 )
@@ -2715,25 +2715,25 @@ BEGIN
 
     -- Get current club zones
     SELECT zones INTO club_zones
-    FROM playing_methodology
+    FROM game_model
     WHERE club_id = p_club_id
     AND team_id IS NULL
     AND zones IS NOT NULL
     LIMIT 1;
 
     -- Update team's zones with club zones (or NULL if club has no zones)
-    UPDATE playing_methodology
+    UPDATE game_model
     SET zones = club_zones, updated_at = NOW()
     WHERE club_id = p_club_id
     AND team_id = p_team_id;
 
     -- If no team record exists, create one
     IF NOT FOUND AND club_zones IS NOT NULL THEN
-        INSERT INTO playing_methodology (
+        INSERT INTO game_model (
             club_id, team_id, created_by_coach_id, title, description, zones, display_order, is_active
         )
         VALUES (
-            p_club_id, p_team_id, caller_coach_id, 'Playing Methodology', 'Team playing methodology', club_zones, 0, true
+            p_club_id, p_team_id, caller_coach_id, 'Game Model', 'Team game model', club_zones, 0, true
         );
     END IF;
 
@@ -2741,7 +2741,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION revert_team_playing_methodology TO authenticated;
+GRANT EXECUTE ON FUNCTION revert_team_game_model TO authenticated;
 
 -- ----------------------------------------
 -- Revert Team Positional Profiles
