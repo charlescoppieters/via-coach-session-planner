@@ -7,11 +7,13 @@ import { theme } from '@/styles/theme'
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   placeholder?: string
   onSubmit?: () => void
+  error?: boolean
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className = '', onSubmit, ...props }, ref) => {
+  ({ className = '', onSubmit, error = false, ...props }, ref) => {
     const inputId = React.useId();
+    const errorBorderColor = '#EF5350';
 
     return (
       <div style={{ position: 'relative', width: '100%' }}>
@@ -33,7 +35,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             padding: theme.spacing.md,
             paddingRight: '3rem', // Make space for the icon
             backgroundColor: theme.components.input.background,
-            border: `1px solid ${theme.components.input.border}`,
+            border: `1px solid ${error ? errorBorderColor : theme.components.input.border}`,
             borderRadius: theme.borderRadius.md,
             color: theme.components.input.text,
             fontSize: theme.typography.fontSize.base,
@@ -43,13 +45,13 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             ...props.style
           }}
           onFocus={(e) => {
-            e.target.style.borderColor = theme.components.input.borderFocus
+            e.target.style.borderColor = error ? errorBorderColor : theme.components.input.borderFocus
             e.target.style.backgroundColor = theme.components.input.backgroundFocus
-            e.target.style.boxShadow = theme.shadows.gold
+            e.target.style.boxShadow = error ? `0 0 0 2px ${errorBorderColor}40` : theme.shadows.gold
             props.onFocus?.(e)
           }}
           onBlur={(e) => {
-            e.target.style.borderColor = theme.components.input.border
+            e.target.style.borderColor = error ? errorBorderColor : theme.components.input.border
             e.target.style.backgroundColor = theme.components.input.background
             e.target.style.boxShadow = 'none'
             props.onBlur?.(e)

@@ -68,8 +68,8 @@ export const GameModelStep: React.FC<GameModelStepProps> = ({
     setEditingZone(null)
   }
 
-  // Handle change zone count
-  const handleChangeZoneCount = () => {
+  // Handle going back to zone count selection
+  const handleBackToZoneCount = () => {
     setZones(null)
     setSelectedZoneId(null)
   }
@@ -275,40 +275,22 @@ export const GameModelStep: React.FC<GameModelStepProps> = ({
             Click a zone to edit its in-possession and out-of-possession details
           </p>
         </div>
-        <div style={{ display: 'flex', gap: theme.spacing.md }}>
-          <button
-            onClick={() => setShowMatchFormatModal(true)}
-            disabled={isSaving}
-            style={{
-              padding: `${theme.spacing.sm} ${theme.spacing.md}`,
-              backgroundColor: 'transparent',
-              color: theme.colors.text.secondary,
-              border: `1px solid ${theme.colors.border.primary}`,
-              borderRadius: theme.borderRadius.md,
-              fontSize: theme.typography.fontSize.sm,
-              cursor: isSaving ? 'not-allowed' : 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {zones.match_format || '11v11'}
-          </button>
-          <button
-            onClick={handleChangeZoneCount}
-            disabled={isSaving}
-            style={{
-              padding: `${theme.spacing.sm} ${theme.spacing.md}`,
-              backgroundColor: 'transparent',
-              color: theme.colors.text.secondary,
-              border: `1px solid ${theme.colors.border.primary}`,
-              borderRadius: theme.borderRadius.md,
-              fontSize: theme.typography.fontSize.sm,
-              cursor: isSaving ? 'not-allowed' : 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Change Zone Count
-          </button>
-        </div>
+        <button
+          onClick={() => setShowMatchFormatModal(true)}
+          disabled={isSaving}
+          style={{
+            padding: `${theme.spacing.sm} ${theme.spacing.md}`,
+            backgroundColor: 'transparent',
+            color: theme.colors.text.secondary,
+            border: `1px solid ${theme.colors.border.primary}`,
+            borderRadius: theme.borderRadius.md,
+            fontSize: theme.typography.fontSize.sm,
+            cursor: isSaving ? 'not-allowed' : 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {zones.match_format || '11v11'}
+        </button>
       </div>
 
       {/* Error Message */}
@@ -388,7 +370,7 @@ export const GameModelStep: React.FC<GameModelStepProps> = ({
         }}
       >
         <button
-          onClick={handleChangeZoneCount}
+          onClick={handleBackToZoneCount}
           disabled={isSaving}
           style={{
             padding: `${theme.spacing.md} ${theme.spacing.xl}`,

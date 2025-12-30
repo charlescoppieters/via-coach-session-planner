@@ -18,6 +18,7 @@ interface BlockPickerModalProps {
   clubId: string | null;
   teamId?: string | null;
   excludeBlockIds?: string[];
+  mode?: 'new' | 'simultaneous';
 }
 
 interface BlockCategory {
@@ -34,7 +35,11 @@ export const BlockPickerModal: React.FC<BlockPickerModalProps> = ({
   clubId,
   teamId,
   excludeBlockIds = [],
+  mode = 'new',
 }) => {
+  const isSimultaneousMode = mode === 'simultaneous';
+  const modalTitle = isSimultaneousMode ? 'Add Simultaneous Practice' : 'Add a Block';
+  const createButtonText = isSimultaneousMode ? 'Create New Practice' : 'Create Training Block';
   const [activeTab, setActiveTab] = useState<PickerTab>(teamId ? 'recommended' : 'browse');
   const [isLoading, setIsLoading] = useState(true);
   const [myBlocks, setMyBlocks] = useState<SessionBlock[]>([]);
@@ -157,7 +162,7 @@ export const BlockPickerModal: React.FC<BlockPickerModalProps> = ({
                 margin: 0,
               }}
             >
-              Add a Block
+              {modalTitle}
             </h2>
             <button
               onClick={onCancel}
@@ -214,7 +219,7 @@ export const BlockPickerModal: React.FC<BlockPickerModalProps> = ({
               }}
             >
               <FiPlus size={20} />
-              Create Training Block
+              {createButtonText}
             </button>
 
             {/* Tab Bar */}

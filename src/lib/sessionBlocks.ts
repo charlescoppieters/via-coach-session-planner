@@ -27,6 +27,7 @@ export interface SessionBlockAssignment {
   session_id: string;
   block_id: string;
   position: number;
+  slot_index: number;
   created_at: string;
 }
 
@@ -34,6 +35,13 @@ export interface SessionBlockAssignment {
 export interface AssignedBlock extends SessionBlock {
   assignment_id: string;
   position: number;
+  slot_index: number;
+}
+
+// Block group type for grouping simultaneous practices
+export interface BlockGroup {
+  position: number;
+  practices: AssignedBlock[]; // 1 or 2 blocks, sorted by slot_index
 }
 
 // Module block type for session modules
@@ -151,6 +159,7 @@ export async function getSessionBlocks(sessionId: string) {
       session_id,
       block_id,
       position,
+      slot_index,
       created_at,
       session_blocks (
         id,
@@ -170,7 +179,8 @@ export async function getSessionBlocks(sessionId: string) {
       )
     `)
     .eq('session_id', sessionId)
-    .order('position', { ascending: true });
+    .order('position', { ascending: true })
+    .order('slot_index', { ascending: true });
 
   if (error) {
     return { data: null, error };
@@ -182,25 +192,33 @@ export async function getSessionBlocks(sessionId: string) {
     session_id: string;
     block_id: string;
     position: number;
+    slot_index: number;
     created_at: string;
     session_blocks: SessionBlock;
   }) => ({
     ...assignment.session_blocks,
     assignment_id: assignment.id,
     position: assignment.position,
+    slot_index: assignment.slot_index,
   }));
 
   return { data: assignedBlocks, error: null };
 }
 
 // Assign a block to a session
-export async function assignBlockToSession(sessionId: string, blockId: string, position: number) {
+export async function assignBlockToSession(
+  sessionId: string,
+  blockId: string,
+  position: number,
+  slotIndex: number = 0
+) {
   const { data, error } = await supabase
     .from('session_block_assignments')
     .insert({
       session_id: sessionId,
       block_id: blockId,
       position,
+      slot_index: slotIndex,
     })
     .select()
     .single();
@@ -243,7 +261,8 @@ export async function updateAssignmentPositions(
 export async function createAndAssignBlock(
   sessionId: string,
   input: CreateBlockInput,
-  position: number
+  position: number,
+  slotIndex: number = 0
 ) {
   // First create the block
   const { data: block, error: blockError } = await createBlock(input);
@@ -256,7 +275,8 @@ export async function createAndAssignBlock(
   const { data: assignment, error: assignError } = await assignBlockToSession(
     sessionId,
     block.id,
-    position
+    position,
+    slotIndex
   );
 
   if (assignError) {
@@ -270,6 +290,7 @@ export async function createAndAssignBlock(
     ...block,
     assignment_id: assignment!.id,
     position: assignment!.position,
+    slot_index: assignment!.slot_index,
   };
 
   return { data: assignedBlock, error: null };
@@ -458,4 +479,139 @@ export async function saveBlockAttributes(
   }
 
   return { success: true, error: null };
+}
+
+// ============================================
+// BLOCK GROUP OPERATIONS (Simultaneous Practices)
+// ============================================
+
+// Group blocks by position into BlockGroups
+export function groupBlocksByPosition(blocks: AssignedBlock[]): BlockGroup[] {
+  const groups: Map<number, AssignedBlock[]> = new Map();
+
+  for (const block of blocks) {
+    const existing = groups.get(block.position) || [];
+    existing.push(block);
+    groups.set(block.position, existing);
+  }
+
+  // Convert to array, sort by position, ensure practices sorted by slot_index
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([position, practices]) => ({
+      position,
+      practices: practices.sort((a, b) => a.slot_index - b.slot_index),
+    }));
+}
+
+// Add a simultaneous practice to an existing block group
+export async function addSimultaneousPractice(
+  sessionId: string,
+  blockId: string,
+  targetPosition: number
+) {
+  // First verify the position only has 1 block (slot_index 0)
+  const { data: existing, error: checkError } = await supabase
+    .from('session_block_assignments')
+    .select('slot_index')
+    .eq('session_id', sessionId)
+    .eq('position', targetPosition);
+
+  if (checkError) {
+    return { data: null, error: checkError };
+  }
+
+  // Check max 2 practices per group
+  if (existing && existing.length >= 2) {
+    return { data: null, error: new Error('Maximum 2 practices per block group') };
+  }
+
+  // Add at slot_index 1
+  return assignBlockToSession(sessionId, blockId, targetPosition, 1);
+}
+
+// Remove a block from a group (handles promotion of slot 1 to slot 0)
+export async function removeFromGroup(assignmentId: string) {
+  // Get the assignment first to check slot_index and position
+  const { data: assignment, error: getError } = await supabase
+    .from('session_block_assignments')
+    .select('*')
+    .eq('id', assignmentId)
+    .single();
+
+  if (getError || !assignment) {
+    return { error: getError || new Error('Assignment not found') };
+  }
+
+  // Delete the assignment
+  const { error: deleteError } = await supabase
+    .from('session_block_assignments')
+    .delete()
+    .eq('id', assignmentId);
+
+  if (deleteError) {
+    return { error: deleteError };
+  }
+
+  // If we deleted slot_index 0 and there's a slot_index 1, promote it to 0
+  if (assignment.slot_index === 0) {
+    await supabase
+      .from('session_block_assignments')
+      .update({ slot_index: 0 })
+      .eq('session_id', assignment.session_id)
+      .eq('position', assignment.position)
+      .eq('slot_index', 1);
+  }
+
+  return { error: null };
+}
+
+// Update positions for entire block groups (for drag-drop reordering)
+export async function updateGroupPositions(
+  groups: { position: number; assignmentIds: string[] }[]
+) {
+  const updates: Promise<{ error: unknown }>[] = [];
+
+  for (const group of groups) {
+    for (const assignmentId of group.assignmentIds) {
+      updates.push(
+        supabase
+          .from('session_block_assignments')
+          .update({ position: group.position })
+          .eq('id', assignmentId)
+      );
+    }
+  }
+
+  const results = await Promise.all(updates);
+  const errors = results.filter((r) => r.error).map((r) => r.error);
+
+  return { success: errors.length === 0, errors };
+}
+
+// Sync duration across all practices in a group
+export async function syncGroupDuration(
+  sessionId: string,
+  position: number,
+  duration: number
+) {
+  // Get all assignments at this position
+  const { data: assignments, error: fetchError } = await supabase
+    .from('session_block_assignments')
+    .select('block_id')
+    .eq('session_id', sessionId)
+    .eq('position', position);
+
+  if (fetchError || !assignments) {
+    return { error: fetchError };
+  }
+
+  // Update duration on all blocks in the group
+  const blockIds = assignments.map((a: { block_id: string }) => a.block_id);
+  const { error: updateError } = await supabase
+    .from('session_blocks')
+    .update({ duration })
+    .in('id', blockIds);
+
+  return { error: updateError };
 }

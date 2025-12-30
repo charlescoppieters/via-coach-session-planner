@@ -1,16 +1,19 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { FiUpload, FiX, FiTrash2, FiClock, FiEdit3, FiImage, FiFileText, FiTag, FiPlus, FiInfo } from 'react-icons/fi';
+import { FiUpload, FiX, FiTrash2, FiClock, FiEdit3, FiImage, FiFileText, FiTag, FiPlus, FiInfo, FiUsers } from 'react-icons/fi';
 import { IoFootball } from 'react-icons/io5';
 import { CgSpinnerAlt } from 'react-icons/cg';
 import { theme } from '@/styles/theme';
 import { type SessionBlock, type AssignedBlock, type BlockAttribute, uploadBlockImage, getBlockAttributes } from '@/lib/sessionBlocks';
 import { getSystemDefaults, type SystemDefault } from '@/lib/methodology';
+import { getBlockPlayerStatuses, setBlockExclusions, getTeamPlayers, getPlayersWithIDPContext, type PlayerBlockStatus } from '@/lib/blockAttendance';
+import { PlayerToggleRow } from './PlayerToggleRow';
 import dynamic from 'next/dynamic';
 import type { TacticsState, TacticsElement } from '@/components/tactics/types';
+import type { GameModelZones, SessionThemeSnapshot } from '@/types/database';
 
-type RightPanelMode = 'details' | 'attributes';
+type RightPanelMode = 'details' | 'attributes' | 'players';
 
 // Dynamic import for TacticsBoard (uses canvas which needs client-side only)
 const TacticsBoard = dynamic(
@@ -241,6 +244,7 @@ export interface BlockSaveData {
   duration: number | null;
   ball_rolling: number | null;
   attributes: Omit<BlockAttribute, 'id' | 'block_id'>[];
+  excludedPlayerIds?: string[]; // Player IDs to exclude from this block
 }
 
 interface BlockEditorModalProps {
@@ -248,6 +252,10 @@ interface BlockEditorModalProps {
   onSave: (data: BlockSaveData) => Promise<void>;
   onDelete?: () => Promise<void>;
   onCancel: () => void;
+  teamId?: string | null; // Team ID to fetch players for the Players tab
+  assignmentId?: string | null; // Assignment ID for block-level player attendance
+  gameModel?: GameModelZones | null; // Game model for AI context
+  sessionTheme?: SessionThemeSnapshot | null; // Session theme for AI context
 }
 
 export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
@@ -255,6 +263,10 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
   onSave,
   onDelete,
   onCancel,
+  teamId,
+  assignmentId,
+  gameModel,
+  sessionTheme,
 }) => {
   const isEditing = !!block;
 
@@ -287,6 +299,16 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
   const [secondOrderOutcomes, setSecondOrderOutcomes] = useState<string[]>([]);
   const [availableAttributes, setAvailableAttributes] = useState<SystemDefault[]>([]);
   const [isLoadingAttributes, setIsLoadingAttributes] = useState(false);
+
+  // Player attendance state
+  const [playerStatuses, setPlayerStatuses] = useState<PlayerBlockStatus[]>([]);
+  const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
+
+  // AI generation state
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
+  const [isGeneratingCoachingPoints, setIsGeneratingCoachingPoints] = useState(false);
+  const [isGeneratingFirstOrder, setIsGeneratingFirstOrder] = useState(false);
+  const [isGeneratingSecondOrder, setIsGeneratingSecondOrder] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tacticsBoardRef = useRef<HTMLDivElement & { exportToImage?: () => Promise<Blob> }>(null);
@@ -336,6 +358,218 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
 
     loadData();
   }, [block?.id]);
+
+  // Load player statuses for the Players tab
+  useEffect(() => {
+    const loadPlayerStatuses = async () => {
+      if (!teamId) {
+        setPlayerStatuses([]);
+        return;
+      }
+
+      setIsLoadingPlayers(true);
+
+      if (assignmentId) {
+        // Editing existing block - load players with their exclusion status
+        const { data, error } = await getBlockPlayerStatuses(assignmentId, teamId);
+        if (error) {
+          console.error('Error loading player statuses:', error);
+        }
+        if (data) {
+          setPlayerStatuses(data);
+        }
+      } else {
+        // Creating new block - load all players as included
+        const { data: players, error } = await getTeamPlayers(teamId);
+        if (error) {
+          console.error('Error loading team players:', error);
+        }
+        if (players) {
+          // All players start as included for new blocks
+          setPlayerStatuses(players.map((player) => ({ player, isIncluded: true })));
+        }
+      }
+
+      setIsLoadingPlayers(false);
+    };
+
+    loadPlayerStatuses();
+  }, [teamId, assignmentId]);
+
+  // Handle toggling a player's inclusion
+  const handleTogglePlayer = (playerId: string, include: boolean) => {
+    setPlayerStatuses((prev) =>
+      prev.map((ps) =>
+        ps.player.id === playerId ? { ...ps, isIncluded: include } : ps
+      )
+    );
+  };
+
+  // Handle AI generation of description
+  const handleGenerateDescription = async () => {
+    if (!title.trim()) return;
+
+    setIsGeneratingDescription(true);
+    try {
+      const response = await fetch('/api/ai/generate-block-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'description',
+          title: title.trim(),
+          gameModel,
+          sessionTheme,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.content) {
+        setDescription(data.content);
+      } else {
+        console.error('Generation failed:', data.error);
+        alert(data.error || 'Failed to generate description');
+      }
+    } catch (error) {
+      console.error('Generation error:', error);
+      alert('Failed to generate description. Please try again.');
+    } finally {
+      setIsGeneratingDescription(false);
+    }
+  };
+
+  // Handle AI generation of coaching points
+  const handleGenerateCoachingPoints = async () => {
+    if (!title.trim() || !description.trim()) return;
+
+    setIsGeneratingCoachingPoints(true);
+    try {
+      // Get included players for IDP context
+      const includedPlayerIds = playerStatuses
+        .filter(ps => ps.isIncluded)
+        .map(ps => ps.player.id);
+
+      // Fetch their IDP context (only if players are included)
+      let playersWithIDPs = null;
+      if (includedPlayerIds.length > 0) {
+        const { data } = await getPlayersWithIDPContext(includedPlayerIds);
+        playersWithIDPs = data;
+      }
+
+      const response = await fetch('/api/ai/generate-block-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'coaching_points',
+          title: title.trim(),
+          description: description.trim(),
+          gameModel,
+          sessionTheme,
+          players: playersWithIDPs,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.content) {
+        setCoachingPoints(data.content);
+      } else {
+        console.error('Generation failed:', data.error);
+        alert(data.error || 'Failed to generate coaching points');
+      }
+    } catch (error) {
+      console.error('Generation error:', error);
+      alert('Failed to generate coaching points. Please try again.');
+    } finally {
+      setIsGeneratingCoachingPoints(false);
+    }
+  };
+
+  // Handle AI generation of first-order outcomes
+  const handleGenerateFirstOrderOutcomes = async () => {
+    if (!title.trim() || !description.trim()) {
+      alert('Please add a title and description before generating outcomes');
+      return;
+    }
+
+    setIsGeneratingFirstOrder(true);
+    try {
+      // Convert availableAttributes to the format expected by the API
+      const attributeOptions = availableAttributes.map((attr) => ({
+        key: attr.key,
+        name: attr.value.name,
+        category: attr.category,
+      }));
+
+      const response = await fetch('/api/ai/generate-block-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'first_order_outcomes',
+          title: title.trim(),
+          description: description.trim(),
+          availableAttributes: attributeOptions,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.outcomes) {
+        setFirstOrderOutcomes(data.outcomes);
+      } else {
+        console.error('Generation failed:', data.error);
+        alert(data.error || 'Failed to generate outcomes');
+      }
+    } catch (error) {
+      console.error('Generation error:', error);
+      alert('Failed to generate outcomes. Please try again.');
+    } finally {
+      setIsGeneratingFirstOrder(false);
+    }
+  };
+
+  // Handle AI generation of second-order outcomes
+  const handleGenerateSecondOrderOutcomes = async () => {
+    if (!title.trim() || !description.trim()) {
+      alert('Please add a title and description before generating outcomes');
+      return;
+    }
+
+    setIsGeneratingSecondOrder(true);
+    try {
+      // Convert availableAttributes to the format expected by the API
+      const attributeOptions = availableAttributes.map((attr) => ({
+        key: attr.key,
+        name: attr.value.name,
+        category: attr.category,
+      }));
+
+      const response = await fetch('/api/ai/generate-block-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'second_order_outcomes',
+          title: title.trim(),
+          description: description.trim(),
+          availableAttributes: attributeOptions,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.outcomes) {
+        setSecondOrderOutcomes(data.outcomes);
+      } else {
+        console.error('Generation failed:', data.error);
+        alert(data.error || 'Failed to generate outcomes');
+      }
+    } catch (error) {
+      console.error('Generation error:', error);
+      alert('Failed to generate outcomes. Please try again.');
+    } finally {
+      setIsGeneratingSecondOrder(false);
+    }
+  };
 
   // Handle tactics board data change
   const handleTacticsDataChange = useCallback((data: TacticsState) => {
@@ -415,6 +649,11 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
 
     setIsSaving(true);
     try {
+      // Calculate excluded player IDs from player statuses
+      const excludedPlayerIds = playerStatuses
+        .filter((ps) => !ps.isIncluded)
+        .map((ps) => ps.player.id);
+
       await onSave({
         title: title.trim(),
         description: description.trim() || null,
@@ -425,7 +664,14 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
         duration: duration,
         ball_rolling: ballRolling,
         attributes: allAttributes,
+        excludedPlayerIds: excludedPlayerIds.length > 0 ? excludedPlayerIds : undefined,
       });
+
+      // Save player exclusions if we have an assignmentId (editing existing block)
+      // For new blocks, the caller will handle saving exclusions after creation
+      if (assignmentId && playerStatuses.length > 0) {
+        await setBlockExclusions(assignmentId, excludedPlayerIds);
+      }
     } catch (err) {
       console.error('Save error:', err);
       alert('Failed to save block');
@@ -450,7 +696,8 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
     }
   };
 
-  const isDisabled = isSaving || isDeleting || isUploading;
+  const isGenerating = isGeneratingDescription || isGeneratingCoachingPoints || isGeneratingFirstOrder || isGeneratingSecondOrder;
+  const isDisabled = isSaving || isDeleting || isUploading || isGenerating;
 
   return (
     <>
@@ -488,7 +735,9 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
             width: '95%',
             maxWidth: '1400px',
             maxHeight: '90vh',
-            overflow: 'auto',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
           {/* Header */}
@@ -528,9 +777,9 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
             </button>
           </div>
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Title and Duration Row */}
-            <div style={{ display: 'flex', gap: theme.spacing.lg, marginBottom: theme.spacing.lg }}>
+            <div style={{ display: 'flex', gap: theme.spacing.lg, marginBottom: theme.spacing.lg, flexShrink: 0 }}>
               {/* Title Field */}
               <div style={{ flex: 1 }}>
                 <label
@@ -709,13 +958,13 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
             {/* Two-column layout: Pitch Diagram left, Description right */}
             <div
               style={{
-                display: 'flex',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
                 gap: theme.spacing.xl,
-                marginBottom: theme.spacing.xl,
               }}
             >
               {/* Left Column - Pitch Diagram (16:9 aspect ratio) */}
-              <div style={{ flex: 1 }}>
+              <div>
                 {/* Label with mode toggle */}
                 <div
                   style={{
@@ -908,7 +1157,7 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
               </div>
 
               {/* Right Column - Tabbed content (Details / Attributes) */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ height: 0, minHeight: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 {/* Tab Header with toggle */}
                 <div
                   style={{
@@ -972,11 +1221,36 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
                       <FiTag size={14} />
                       Outcomes
                     </button>
+                    {/* Players tab - show if teamId is available */}
+                    {teamId && (
+                      <button
+                        type="button"
+                        onClick={() => setRightPanelMode('players')}
+                        disabled={isDisabled}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: theme.spacing.xs,
+                          padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
+                          backgroundColor: rightPanelMode === 'players' ? theme.colors.gold.main : 'transparent',
+                          color: rightPanelMode === 'players' ? theme.colors.background.primary : theme.colors.text.secondary,
+                          border: 'none',
+                          borderRadius: theme.borderRadius.sm,
+                          fontSize: theme.typography.fontSize.xs,
+                          fontWeight: theme.typography.fontWeight.semibold,
+                          cursor: isDisabled ? 'not-allowed' : 'pointer',
+                          transition: theme.transitions.fast,
+                        }}
+                      >
+                        <FiUsers size={14} />
+                        Players
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 {/* Tab Content */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: theme.spacing.md }}>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: theme.spacing.md, overflow: 'hidden' }}>
                   {rightPanelMode === 'details' ? (
                     <>
                       {/* Description Field */}
@@ -1042,6 +1316,29 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
                               }
                             }}
                           />
+                          {/* Generate Description Button */}
+                          <button
+                            type="button"
+                            onClick={handleGenerateDescription}
+                            disabled={isDisabled || !title.trim()}
+                            style={{
+                              position: 'absolute',
+                              bottom: theme.spacing.sm,
+                              right: theme.spacing.sm,
+                              padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
+                              backgroundColor: isDisabled || !title.trim() ? theme.colors.background.tertiary : theme.colors.gold.main,
+                              color: isDisabled || !title.trim() ? theme.colors.text.muted : theme.colors.background.primary,
+                              border: 'none',
+                              borderRadius: theme.borderRadius.sm,
+                              fontSize: theme.typography.fontSize.xs,
+                              fontWeight: theme.typography.fontWeight.semibold,
+                              cursor: isDisabled || !title.trim() ? 'not-allowed' : 'pointer',
+                              opacity: isDisabled || !title.trim() ? 0.6 : 1,
+                              transition: theme.transitions.fast,
+                            }}
+                          >
+                            {isGeneratingDescription ? 'Generating...' : 'Generate'}
+                          </button>
                         </div>
                       </div>
 
@@ -1108,10 +1405,33 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
                               }
                             }}
                           />
+                          {/* Generate Coaching Points Button */}
+                          <button
+                            type="button"
+                            onClick={handleGenerateCoachingPoints}
+                            disabled={isDisabled || !title.trim() || !description.trim()}
+                            style={{
+                              position: 'absolute',
+                              bottom: theme.spacing.sm,
+                              right: theme.spacing.sm,
+                              padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
+                              backgroundColor: isDisabled || !title.trim() || !description.trim() ? theme.colors.background.tertiary : theme.colors.gold.main,
+                              color: isDisabled || !title.trim() || !description.trim() ? theme.colors.text.muted : theme.colors.background.primary,
+                              border: 'none',
+                              borderRadius: theme.borderRadius.sm,
+                              fontSize: theme.typography.fontSize.xs,
+                              fontWeight: theme.typography.fontWeight.semibold,
+                              cursor: isDisabled || !title.trim() || !description.trim() ? 'not-allowed' : 'pointer',
+                              opacity: isDisabled || !title.trim() || !description.trim() ? 0.6 : 1,
+                              transition: theme.transitions.fast,
+                            }}
+                          >
+                            {isGeneratingCoachingPoints ? 'Generating...' : 'Generate'}
+                          </button>
                         </div>
                       </div>
                     </>
-                  ) : (
+                  ) : rightPanelMode === 'attributes' ? (
                     /* Attributes Tab Content */
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: theme.spacing.lg }}>
                       {isLoadingAttributes ? (
@@ -1157,41 +1477,76 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
                                   }}
                                 />
                               ))}
-                              {firstOrderOutcomes.length < 3 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setFirstOrderOutcomes([...firstOrderOutcomes, ''])}
-                                  disabled={isDisabled}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: theme.spacing.xs,
-                                    padding: theme.spacing.sm,
-                                    backgroundColor: 'transparent',
-                                    color: theme.colors.text.muted,
-                                    border: `1px dashed ${theme.colors.border.primary}`,
-                                    borderRadius: theme.borderRadius.md,
-                                    fontSize: theme.typography.fontSize.sm,
-                                    cursor: isDisabled ? 'not-allowed' : 'pointer',
-                                    opacity: isDisabled ? 0.6 : 1,
-                                    transition: theme.transitions.fast,
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!isDisabled) {
-                                      e.currentTarget.style.borderColor = theme.colors.gold.main;
-                                      e.currentTarget.style.color = theme.colors.gold.main;
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!isDisabled) {
-                                      e.currentTarget.style.borderColor = theme.colors.border.primary;
-                                      e.currentTarget.style.color = theme.colors.text.muted;
-                                    }
-                                  }}
-                                >
-                                  <FiPlus size={14} />
-                                  Add first order outcome
-                                </button>
+                              {/* Button row: Add (when < 3 outcomes) + Generate (when 0 outcomes) */}
+                              {(firstOrderOutcomes.length === 0 || firstOrderOutcomes.length < 3) && (
+                                <div style={{ display: 'flex', gap: theme.spacing.sm }}>
+                                  {/* Add button - when < 3 outcomes */}
+                                  {firstOrderOutcomes.length < 3 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setFirstOrderOutcomes([...firstOrderOutcomes, ''])}
+                                      disabled={isDisabled}
+                                      style={{
+                                        flex: 1,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: theme.spacing.xs,
+                                        padding: theme.spacing.sm,
+                                        backgroundColor: 'transparent',
+                                        color: theme.colors.text.muted,
+                                        border: `1px dashed ${theme.colors.border.primary}`,
+                                        borderRadius: theme.borderRadius.md,
+                                        fontSize: theme.typography.fontSize.sm,
+                                        cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                        opacity: isDisabled ? 0.6 : 1,
+                                        transition: theme.transitions.fast,
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (!isDisabled) {
+                                          e.currentTarget.style.borderColor = theme.colors.gold.main;
+                                          e.currentTarget.style.color = theme.colors.gold.main;
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (!isDisabled) {
+                                          e.currentTarget.style.borderColor = theme.colors.border.primary;
+                                          e.currentTarget.style.color = theme.colors.text.muted;
+                                        }
+                                      }}
+                                    >
+                                      <FiPlus size={14} />
+                                      Add outcome
+                                    </button>
+                                  )}
+                                  {/* Generate button - only when zero outcomes */}
+                                  {firstOrderOutcomes.length === 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={handleGenerateFirstOrderOutcomes}
+                                      disabled={isDisabled}
+                                      style={{
+                                        flex: 1,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: theme.spacing.xs,
+                                        padding: theme.spacing.sm,
+                                        backgroundColor: theme.colors.gold.main,
+                                        color: theme.colors.background.primary,
+                                        border: 'none',
+                                        borderRadius: theme.borderRadius.md,
+                                        fontSize: theme.typography.fontSize.sm,
+                                        fontWeight: theme.typography.fontWeight.medium,
+                                        cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                        opacity: isDisabled ? 0.6 : 1,
+                                        transition: theme.transitions.fast,
+                                      }}
+                                    >
+                                      {isGeneratingFirstOrder ? 'Generating...' : 'Generate'}
+                                    </button>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -1233,43 +1588,140 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
                                   }}
                                 />
                               ))}
-                              {secondOrderOutcomes.length < 3 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSecondOrderOutcomes([...secondOrderOutcomes, ''])}
-                                  disabled={isDisabled}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: theme.spacing.xs,
-                                    padding: theme.spacing.sm,
-                                    backgroundColor: 'transparent',
-                                    color: theme.colors.text.muted,
-                                    border: `1px dashed ${theme.colors.border.primary}`,
-                                    borderRadius: theme.borderRadius.md,
-                                    fontSize: theme.typography.fontSize.sm,
-                                    cursor: isDisabled ? 'not-allowed' : 'pointer',
-                                    opacity: isDisabled ? 0.6 : 1,
-                                    transition: theme.transitions.fast,
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!isDisabled) {
-                                      e.currentTarget.style.borderColor = theme.colors.gold.main;
-                                      e.currentTarget.style.color = theme.colors.gold.main;
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!isDisabled) {
-                                      e.currentTarget.style.borderColor = theme.colors.border.primary;
-                                      e.currentTarget.style.color = theme.colors.text.muted;
-                                    }
-                                  }}
-                                >
-                                  <FiPlus size={14} />
-                                  Add second order outcome
-                                </button>
+                              {/* Button row: Add (when < 3 outcomes) + Generate (when 0 outcomes) */}
+                              {(secondOrderOutcomes.length === 0 || secondOrderOutcomes.length < 3) && (
+                                <div style={{ display: 'flex', gap: theme.spacing.sm }}>
+                                  {/* Add button - when < 3 outcomes */}
+                                  {secondOrderOutcomes.length < 3 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSecondOrderOutcomes([...secondOrderOutcomes, ''])}
+                                      disabled={isDisabled}
+                                      style={{
+                                        flex: 1,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: theme.spacing.xs,
+                                        padding: theme.spacing.sm,
+                                        backgroundColor: 'transparent',
+                                        color: theme.colors.text.muted,
+                                        border: `1px dashed ${theme.colors.border.primary}`,
+                                        borderRadius: theme.borderRadius.md,
+                                        fontSize: theme.typography.fontSize.sm,
+                                        cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                        opacity: isDisabled ? 0.6 : 1,
+                                        transition: theme.transitions.fast,
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (!isDisabled) {
+                                          e.currentTarget.style.borderColor = theme.colors.gold.main;
+                                          e.currentTarget.style.color = theme.colors.gold.main;
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (!isDisabled) {
+                                          e.currentTarget.style.borderColor = theme.colors.border.primary;
+                                          e.currentTarget.style.color = theme.colors.text.muted;
+                                        }
+                                      }}
+                                    >
+                                      <FiPlus size={14} />
+                                      Add outcome
+                                    </button>
+                                  )}
+                                  {/* Generate button - only when zero outcomes */}
+                                  {secondOrderOutcomes.length === 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={handleGenerateSecondOrderOutcomes}
+                                      disabled={isDisabled}
+                                      style={{
+                                        flex: 1,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: theme.spacing.xs,
+                                        padding: theme.spacing.sm,
+                                        backgroundColor: theme.colors.gold.main,
+                                        color: theme.colors.background.primary,
+                                        border: 'none',
+                                        borderRadius: theme.borderRadius.md,
+                                        fontSize: theme.typography.fontSize.sm,
+                                        fontWeight: theme.typography.fontWeight.medium,
+                                        cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                        opacity: isDisabled ? 0.6 : 1,
+                                        transition: theme.transitions.fast,
+                                      }}
+                                    >
+                                      {isGeneratingSecondOrder ? 'Generating...' : 'Generate'}
+                                    </button>
+                                  )}
+                                </div>
                               )}
                             </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    /* Players Tab Content */
+                    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: theme.spacing.md, overflow: 'hidden' }}>
+                      {isLoadingPlayers ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                          <CgSpinnerAlt style={{ animation: 'spin 1s linear infinite', fontSize: '24px', color: theme.colors.text.muted }} />
+                        </div>
+                      ) : playerStatuses.length === 0 ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flex: 1,
+                            color: theme.colors.text.muted,
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          No players on this team
+                        </div>
+                      ) : (
+                        <>
+                          {/* Participation count header */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: theme.spacing.sm,
+                              padding: theme.spacing.sm,
+                              backgroundColor: theme.colors.background.primary,
+                              borderRadius: theme.borderRadius.md,
+                            }}
+                          >
+                            <span style={{ color: theme.colors.text.secondary, fontSize: theme.typography.fontSize.sm }}>
+                              {playerStatuses.filter((ps) => ps.isIncluded).length} of {playerStatuses.length} participating
+                            </span>
+                          </div>
+
+                          {/* Player list */}
+                          <div
+                            style={{
+                              flex: 1,
+                              minHeight: 0,
+                              overflowY: 'auto',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: theme.spacing.sm,
+                            }}
+                          >
+                            {playerStatuses.map((ps) => (
+                              <PlayerToggleRow
+                                key={ps.player.id}
+                                player={ps.player}
+                                isIncluded={ps.isIncluded}
+                                onToggle={(include) => handleTogglePlayer(ps.player.id, include)}
+                                disabled={isDisabled}
+                              />
+                            ))}
                           </div>
                         </>
                       )}
@@ -1285,6 +1737,8 @@ export const BlockEditorModal: React.FC<BlockEditorModalProps> = ({
                 display: 'flex',
                 gap: theme.spacing.sm,
                 justifyContent: 'space-between',
+                flexShrink: 0,
+                marginTop: theme.spacing.lg,
               }}
             >
               {/* Delete Button (only for editing) */}

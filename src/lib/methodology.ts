@@ -10,6 +10,7 @@ import type {
   TrainingSyllabus,
   SyllabusWeek,
   SyllabusDay,
+  SyllabusSlot,
 } from '@/types/database'
 import { isGameModelZonesV2, isPositionalProfileAttributesV2, isTrainingSyllabus, isZoneBlockArray } from '@/types/database'
 
@@ -1297,6 +1298,138 @@ export async function cleanOrphanedSyllabusEntries(
   }
 
   return { error: null }
+}
+
+// ========================================
+// Syllabus Slot Helpers (for Session Creation)
+// ========================================
+
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+/**
+ * Get all syllabus slots as a flat list
+ * Only includes days that have themes assigned (skips rest days)
+ * Slots are ordered by week, then by day of week
+ */
+export function getSyllabusSlots(syllabus: TrainingSyllabus): SyllabusSlot[] {
+  const slots: SyllabusSlot[] = []
+
+  for (const week of syllabus.weeks) {
+    for (const day of week.days) {
+      // Only include days with themes
+      if (day.theme) {
+        slots.push({
+          weekIndex: week.order - 1, // 0-indexed
+          weekOrder: week.order,     // 1-indexed for display
+          dayOfWeek: day.dayOfWeek,
+          dayName: DAY_NAMES[day.dayOfWeek],
+          theme: day.theme,
+        })
+      }
+    }
+  }
+
+  // Sort by week order, then by day of week
+  slots.sort((a, b) => {
+    if (a.weekOrder !== b.weekOrder) {
+      return a.weekOrder - b.weekOrder
+    }
+    return a.dayOfWeek - b.dayOfWeek
+  })
+
+  return slots
+}
+
+/**
+ * Find the next slot in the syllabus after a given position
+ * Wraps around to the first slot if at the end (cycle repeats)
+ *
+ * @param syllabus - The training syllabus
+ * @param currentWeekIndex - 0-indexed week number of current position
+ * @param currentDayOfWeek - Day of week of current position (0=Mon, 6=Sun)
+ * @returns The next slot, or null if no slots with themes exist
+ */
+export function getNextSyllabusSlot(
+  syllabus: TrainingSyllabus,
+  currentWeekIndex: number,
+  currentDayOfWeek: number
+): SyllabusSlot | null {
+  const slots = getSyllabusSlots(syllabus)
+
+  if (slots.length === 0) {
+    return null
+  }
+
+  // Find the index of the current slot (or where it would be)
+  const currentSlotIndex = slots.findIndex(
+    (slot) => slot.weekIndex === currentWeekIndex && slot.dayOfWeek === currentDayOfWeek
+  )
+
+  if (currentSlotIndex === -1) {
+    // Current position not found - find the first slot after current position
+    for (const slot of slots) {
+      if (slot.weekIndex > currentWeekIndex) {
+        return slot
+      }
+      if (slot.weekIndex === currentWeekIndex && slot.dayOfWeek > currentDayOfWeek) {
+        return slot
+      }
+    }
+    // If none found after current position, wrap to first slot
+    return slots[0]
+  }
+
+  // Current slot found - return next slot (wrapping if needed)
+  const nextIndex = (currentSlotIndex + 1) % slots.length
+  return slots[nextIndex]
+}
+
+/**
+ * Get the first slot in the syllabus
+ * Used when there are no previous sessions
+ */
+export function getFirstSyllabusSlot(syllabus: TrainingSyllabus): SyllabusSlot | null {
+  const slots = getSyllabusSlots(syllabus)
+  return slots.length > 0 ? slots[0] : null
+}
+
+/**
+ * Calculate the next occurrence of a specific day of week after a given date
+ *
+ * @param afterDate - The date to start from
+ * @param targetDayOfWeek - Target day of week (0=Mon, 6=Sun in syllabus format)
+ * @returns The next date that falls on the target day of week
+ */
+export function getNextDayOfWeek(afterDate: Date, targetDayOfWeek: number): Date {
+  // Convert syllabus day format (0=Mon) to JS Date format (0=Sun)
+  const jsDayOfWeek = (targetDayOfWeek + 1) % 7
+
+  const result = new Date(afterDate)
+  result.setHours(0, 0, 0, 0)
+
+  // Start from the day after afterDate
+  result.setDate(result.getDate() + 1)
+
+  // Keep advancing until we hit the target day
+  while (result.getDay() !== jsDayOfWeek) {
+    result.setDate(result.getDate() + 1)
+  }
+
+  return result
+}
+
+/**
+ * Find a syllabus slot by its position
+ */
+export function findSyllabusSlot(
+  syllabus: TrainingSyllabus,
+  weekIndex: number,
+  dayOfWeek: number
+): SyllabusSlot | null {
+  const slots = getSyllabusSlots(syllabus)
+  return slots.find(
+    (slot) => slot.weekIndex === weekIndex && slot.dayOfWeek === dayOfWeek
+  ) || null
 }
 
 // ========================================

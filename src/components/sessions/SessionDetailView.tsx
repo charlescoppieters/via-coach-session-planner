@@ -8,7 +8,13 @@ import { BlockEditor } from '@/components/sessions/BlockEditor';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { ChatInput } from '@/components/chat/ChatInput';
 import type { ChatMessageType } from '@/components/chat/ChatMessage';
-import type { Session, Team } from '@/types/database';
+import type { Session, Team, SessionThemeSnapshot, GameModelZones } from '@/types/database';
+import { getClubGameModelZones } from '@/lib/methodology';
+
+// Extended session type that includes syllabus fields
+interface SessionWithTheme extends Session {
+  theme_snapshot?: SessionThemeSnapshot | null;
+}
 import { createClient } from '@/lib/supabase/client';
 
 const supabase = createClient();
@@ -36,7 +42,8 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
   const [aiUpdatedContent, setAiUpdatedContent] = useState<string | undefined>(undefined);
 
   // Session and context state
-  const [currentSession, setCurrentSession] = useState<Session | null>(null);
+  const [currentSession, setCurrentSession] = useState<SessionWithTheme | null>(null);
+  const [gameModel, setGameModel] = useState<GameModelZones | null>(null);
   const [globalRules, setGlobalRules] = useState<Array<{ content: string }>>([]);
   const [teamRules, setTeamRules] = useState<Array<{ content: string }>>([]);
   const [players, setPlayers] = useState<Array<{
@@ -53,7 +60,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
   };
 
   // Callback to receive session data from SessionEditor
-  const handleSessionLoad = (session: Session) => {
+  const handleSessionLoad = (session: SessionWithTheme) => {
     setCurrentSession(session);
   };
 
@@ -75,7 +82,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
         }
 
         if (data) {
-          setCurrentSession(data as Session);
+          setCurrentSession(data as SessionWithTheme);
           setSessionContent(data.content || '');
         }
       } catch (error) {
@@ -85,6 +92,24 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
 
     fetchSession();
   }, [sessionId, mode]);
+
+  // Fetch game model when session is loaded
+  useEffect(() => {
+    const fetchGameModel = async () => {
+      if (!currentSession?.club_id) {
+        setGameModel(null);
+        return;
+      }
+
+      const { data, error } = await getClubGameModelZones(currentSession.club_id);
+      if (error) {
+        console.error('Failed to fetch game model:', error);
+      }
+      setGameModel(data);
+    };
+
+    fetchGameModel();
+  }, [currentSession?.club_id]);
 
   // TODO: Fetch methodology data from v2 tables (game_model, training_methodology)
   // For now, rules are empty until methodology migration is complete
@@ -413,6 +438,48 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
                   day: 'numeric'
                 }) : ''}
               </div>
+
+              {/* Theme Badge (if from syllabus) */}
+              {currentSession?.theme_snapshot && (
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
+                    backgroundColor:
+                      currentSession.theme_snapshot.blockType === 'in_possession'
+                        ? 'rgba(239, 191, 4, 0.15)'
+                        : 'rgba(220, 53, 69, 0.15)',
+                    borderRadius: theme.borderRadius.sm,
+                    marginTop: theme.spacing.md,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      backgroundColor:
+                        currentSession.theme_snapshot.blockType === 'in_possession'
+                          ? theme.colors.gold.main
+                          : theme.colors.status.error,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: theme.typography.fontSize.sm,
+                      color:
+                        currentSession.theme_snapshot.blockType === 'in_possession'
+                          ? theme.colors.gold.main
+                          : theme.colors.status.error,
+                      fontWeight: theme.typography.fontWeight.medium,
+                    }}
+                  >
+                    {currentSession.theme_snapshot.zoneName} • {currentSession.theme_snapshot.blockName}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Session Blocks - Read Only */}
@@ -423,6 +490,8 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
                 clubId={currentSession?.club_id || null}
                 teamId={team.id}
                 readOnly={true}
+                gameModel={gameModel}
+                sessionTheme={currentSession?.theme_snapshot || null}
               />
             </div>
           </div>

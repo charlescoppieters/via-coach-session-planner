@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { FiMousePointer, FiUser, FiTriangle, FiArrowRight, FiMinus, FiTrash2, FiTrash, FiX } from 'react-icons/fi';
+import { FiMousePointer, FiUser, FiTriangle, FiArrowRight, FiMinus, FiTrash2, FiTrash, FiX, FiRotateCw } from 'react-icons/fi';
 import { theme } from '@/styles/theme';
 import { type ToolType, type PitchView } from './types';
 
@@ -29,9 +29,18 @@ interface TacticsToolbarProps {
   onDeleteSelected: () => void;
   onClearAll: () => void;
   hasSelection: boolean;
+  hasMinigoalSelected: boolean;
+  onRotateSelected: () => void;
   pitchView: PitchView;
   onPitchViewChange: (view: PitchView) => void;
 }
+
+// Custom minigoal icon (U-shape rotated 90° to match default placement)
+const MinigoalIcon: React.FC<{ size?: number }> = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 3 L11 3 L11 11 L3 11" />
+  </svg>
+);
 
 interface ToolButtonProps {
   icon: React.ReactNode;
@@ -49,9 +58,9 @@ const ToolButton: React.FC<ToolButtonProps> = ({ icon, label, isActive, onClick 
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      width: 40,
-      height: 40,
-      borderRadius: theme.borderRadius.md,
+      width: 32,
+      height: 32,
+      borderRadius: theme.borderRadius.sm,
       border: 'none',
       backgroundColor: isActive ? theme.colors.gold.main : theme.colors.background.tertiary,
       color: isActive ? theme.colors.background.primary : theme.colors.text.primary,
@@ -167,13 +176,15 @@ export const TacticsToolbar: React.FC<TacticsToolbarProps> = ({
   onDeleteSelected,
   onClearAll,
   hasSelection,
+  hasMinigoalSelected,
+  onRotateSelected,
   pitchView,
   onPitchViewChange,
 }) => {
   const [showColorPicker, setShowColorPicker] = useState(false);
 
   // Show color picker for tools that use color
-  const showColorOption = selectedTool === 'player' || selectedTool === 'cone' || selectedTool === 'arrow' || selectedTool === 'line';
+  const showColorOption = selectedTool === 'player' || selectedTool === 'cone' || selectedTool === 'minigoal' || selectedTool === 'arrow' || selectedTool === 'line';
   return (
     <div
       style={{
@@ -216,46 +227,52 @@ export const TacticsToolbar: React.FC<TacticsToolbarProps> = ({
       </select>
 
       {/* Divider */}
-      <div style={{ width: 1, height: 32, backgroundColor: theme.colors.border.primary }} />
+      <div style={{ width: 1, height: 24, backgroundColor: theme.colors.border.primary }} />
 
       {/* Main tools */}
-      <div style={{ display: 'flex', gap: theme.spacing.xs }}>
+      <div style={{ display: 'flex', gap: 4 }}>
         <ToolButton
-          icon={<FiMousePointer size={18} />}
+          icon={<FiMousePointer size={14} />}
           label="Select"
           isActive={selectedTool === 'select'}
           onClick={() => onToolChange('select')}
         />
         <ToolButton
-          icon={<FiUser size={18} />}
+          icon={<FiUser size={14} />}
           label="Add Player"
           isActive={selectedTool === 'player'}
           onClick={() => onToolChange('player')}
         />
         <ToolButton
-          icon={<FiTriangle size={18} />}
+          icon={<FiTriangle size={14} />}
           label="Add Cone"
           isActive={selectedTool === 'cone'}
           onClick={() => onToolChange('cone')}
         />
         <ToolButton
-          icon={<FiArrowRight size={18} />}
+          icon={<MinigoalIcon size={14} />}
+          label="Add Minigoal"
+          isActive={selectedTool === 'minigoal'}
+          onClick={() => onToolChange('minigoal')}
+        />
+        <ToolButton
+          icon={<FiArrowRight size={14} />}
           label="Draw Arrow"
           isActive={selectedTool === 'arrow'}
           onClick={() => onToolChange('arrow')}
         />
         <ToolButton
-          icon={<FiMinus size={18} />}
+          icon={<FiMinus size={14} />}
           label="Draw Line"
           isActive={selectedTool === 'line'}
           onClick={() => onToolChange('line')}
         />
       </div>
 
-      {/* Color picker button (for player, cone, arrow, line tools) */}
+      {/* Color picker button (for player, cone, minigoal, arrow, line tools) */}
       {showColorOption && (
         <>
-          <div style={{ width: 1, height: 32, backgroundColor: theme.colors.border.primary }} />
+          <div style={{ width: 1, height: 24, backgroundColor: theme.colors.border.primary }} />
           <button
             type="button"
             onClick={() => setShowColorPicker(true)}
@@ -263,8 +280,8 @@ export const TacticsToolbar: React.FC<TacticsToolbarProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: 32,
-              height: 32,
+              width: 24,
+              height: 24,
               padding: 0,
               backgroundColor: selectedColor,
               border: `2px solid ${theme.colors.border.primary}`,
@@ -298,11 +315,41 @@ export const TacticsToolbar: React.FC<TacticsToolbarProps> = ({
         </label>
       )}
 
+      {/* Rotate button (for minigoals) */}
+      {hasMinigoalSelected && (
+        <>
+          <div style={{ width: 1, height: 24, backgroundColor: theme.colors.border.primary }} />
+          <button
+            type="button"
+            onClick={onRotateSelected}
+            title="Rotate 90°"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 4,
+              padding: `0 ${theme.spacing.sm}`,
+              height: 32,
+              borderRadius: theme.borderRadius.sm,
+              border: `1px solid ${theme.colors.border.primary}`,
+              backgroundColor: theme.colors.background.tertiary,
+              color: theme.colors.text.primary,
+              cursor: 'pointer',
+              transition: theme.transitions.fast,
+              fontSize: theme.typography.fontSize.xs,
+            }}
+          >
+            <FiRotateCw size={12} />
+            Rotate
+          </button>
+        </>
+      )}
+
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
       {/* Delete actions */}
-      <div style={{ display: 'flex', gap: theme.spacing.xs }}>
+      <div style={{ display: 'flex', gap: 4 }}>
         <button
           type="button"
           onClick={onDeleteSelected}
@@ -312,9 +359,9 @@ export const TacticsToolbar: React.FC<TacticsToolbarProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 40,
-            height: 40,
-            borderRadius: theme.borderRadius.md,
+            width: 32,
+            height: 32,
+            borderRadius: theme.borderRadius.sm,
             border: 'none',
             backgroundColor: hasSelection ? theme.colors.status.error : theme.colors.background.tertiary,
             color: hasSelection ? '#FFFFFF' : theme.colors.text.disabled,
@@ -323,7 +370,7 @@ export const TacticsToolbar: React.FC<TacticsToolbarProps> = ({
             opacity: hasSelection ? 1 : 0.5,
           }}
         >
-          <FiTrash2 size={18} />
+          <FiTrash2 size={14} />
         </button>
         <button
           type="button"
@@ -333,19 +380,19 @@ export const TacticsToolbar: React.FC<TacticsToolbarProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: theme.spacing.xs,
+            gap: 4,
             padding: `0 ${theme.spacing.sm}`,
-            height: 40,
-            borderRadius: theme.borderRadius.md,
+            height: 32,
+            borderRadius: theme.borderRadius.sm,
             border: `1px solid ${theme.colors.border.primary}`,
             backgroundColor: 'transparent',
             color: theme.colors.text.secondary,
             cursor: 'pointer',
             transition: theme.transitions.fast,
-            fontSize: theme.typography.fontSize.sm,
+            fontSize: theme.typography.fontSize.xs,
           }}
         >
-          <FiTrash size={16} />
+          <FiTrash size={12} />
           Clear
         </button>
       </div>

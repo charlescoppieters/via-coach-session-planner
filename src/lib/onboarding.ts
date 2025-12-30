@@ -5,6 +5,73 @@ const supabase = createClient();
 import type { CoachUpdate, TeamInsert, TeamCoachInsert } from '@/types/database';
 
 /**
+ * Check onboarding progress to determine which step to resume at
+ */
+export async function getOnboardingProgress(coachId: string, clubId: string): Promise<{
+  hasProfile: boolean
+  hasGameModel: boolean
+  hasTrainingSyllabus: boolean
+  hasPositionalProfiles: boolean
+  hasTeam: boolean
+}> {
+  // Run all queries in parallel for efficiency
+  const [coachResult, gameModelResult, syllabusResult, profilesResult, teamsResult] = await Promise.all([
+    // Check coach profile - has name set (not just email-derived default)
+    supabase
+      .from('coaches')
+      .select('name, email')
+      .eq('id', coachId)
+      .single(),
+
+    // Check if game model exists for club
+    supabase
+      .from('game_model')
+      .select('id')
+      .eq('club_id', clubId)
+      .limit(1),
+
+    // Check if training syllabus exists for club
+    supabase
+      .from('training_methodology')
+      .select('id')
+      .eq('club_id', clubId)
+      .limit(1),
+
+    // Check if positional profiles exist for club
+    supabase
+      .from('positional_profiles')
+      .select('id')
+      .eq('club_id', clubId)
+      .limit(1),
+
+    // Check if any team exists for club
+    supabase
+      .from('teams')
+      .select('id')
+      .eq('club_id', clubId)
+      .limit(1),
+  ]);
+
+  // Determine if profile is complete
+  // Profile is complete if name exists and is different from email prefix
+  let hasProfile = false;
+  if (coachResult.data?.name) {
+    const email = coachResult.data.email || '';
+    const emailPrefix = email.split('@')[0];
+    // Consider profile complete if name is set and not just the email prefix
+    hasProfile = coachResult.data.name !== emailPrefix && coachResult.data.name.trim() !== '';
+  }
+
+  return {
+    hasProfile,
+    hasGameModel: (gameModelResult.data?.length ?? 0) > 0,
+    hasTrainingSyllabus: (syllabusResult.data?.length ?? 0) > 0,
+    hasPositionalProfiles: (profilesResult.data?.length ?? 0) > 0,
+    hasTeam: (teamsResult.data?.length ?? 0) > 0,
+  };
+}
+
+/**
  * Updates coach profile during onboarding
  */
 export const updateCoachProfile = async (

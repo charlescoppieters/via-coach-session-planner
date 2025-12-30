@@ -1,6 +1,6 @@
 // Tactics Board Types
 
-export type ToolType = 'select' | 'player' | 'cone' | 'arrow' | 'line';
+export type ToolType = 'select' | 'player' | 'cone' | 'minigoal' | 'arrow' | 'line';
 
 export type PitchView = 'full' | 'attacking' | 'defending' | 'blank';
 
@@ -37,7 +37,16 @@ export interface LineElement {
   color: string;
 }
 
-export type TacticsElement = PlayerElement | ConeElement | ArrowElement | LineElement;
+export interface MinigoalElement {
+  type: 'minigoal';
+  id: string;
+  x: number;
+  y: number;
+  rotation: number; // Rotation angle in degrees
+  color: string;
+}
+
+export type TacticsElement = PlayerElement | ConeElement | ArrowElement | LineElement | MinigoalElement;
 
 export interface TacticsState {
   elements: TacticsElement[];
@@ -61,6 +70,8 @@ export const DEFAULT_PITCH_HEIGHT = DEFAULT_PITCH_WIDTH / PITCH_ASPECT_RATIO;
 // Element sizes (relative to pitch width)
 export const PLAYER_RADIUS = 20;
 export const CONE_SIZE = 16;
+export const MINIGOAL_WIDTH = 50;
+export const MINIGOAL_HEIGHT = 18;
 export const LINE_STROKE_WIDTH = 3;
 export const ARROW_POINTER_LENGTH = 12;
 export const ARROW_POINTER_WIDTH = 10;

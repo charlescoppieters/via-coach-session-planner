@@ -6,7 +6,7 @@ import { theme } from '@/styles/theme'
 interface OTPInputProps {
   length?: number
   onComplete?: (otp: string) => void
-  onSubmit?: () => void
+  onSubmit?: (otp?: string) => void
 }
 
 export const OTPInput: React.FC<OTPInputProps> = ({
@@ -38,11 +38,12 @@ export const OTPInput: React.FC<OTPInputProps> = ({
 
     // Call onComplete and onSubmit when all digits are filled
     if (newOtp.every(digit => digit !== '')) {
+      const code = newOtp.join('')
       if (onComplete) {
-        onComplete(newOtp.join(''))
+        onComplete(code)
       }
       if (onSubmit) {
-        onSubmit()
+        onSubmit(code)
       }
     }
   }
@@ -80,11 +81,12 @@ export const OTPInput: React.FC<OTPInputProps> = ({
     inputRefs.current[focusIndex]?.focus()
 
     if (newOtp.every(digit => digit !== '')) {
+      const code = newOtp.join('')
       if (onComplete) {
-        onComplete(newOtp.join(''))
+        onComplete(code)
       }
       if (onSubmit) {
-        onSubmit()
+        onSubmit(code)
       }
     }
   }

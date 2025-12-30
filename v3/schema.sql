@@ -285,6 +285,24 @@ COMMENT ON COLUMN session_block_attributes.source IS 'Origin: llm (auto-suggeste
 COMMENT ON COLUMN session_block_attributes.order_type IS 'first = primary training focus, second = secondary/indirect training (e.g., GK in shooting drill)';
 
 -- ----------------------------------------
+-- BLOCK PLAYER EXCLUSIONS
+-- ----------------------------------------
+-- Tracks players who are excluded from specific blocks within a session.
+-- If a player has a row here, they don't get IDP outcomes for that block.
+-- Absence of a row means the player is included (default behavior).
+CREATE TABLE block_player_exclusions (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    assignment_id UUID NOT NULL REFERENCES session_block_assignments(id) ON DELETE CASCADE,
+    player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    UNIQUE(assignment_id, player_id)
+);
+
+COMMENT ON TABLE block_player_exclusions IS 'Players excluded from specific training blocks. Excluded players do not get IDP outcomes for that block.';
+COMMENT ON COLUMN block_player_exclusions.assignment_id IS 'References the specific block assignment in a session';
+COMMENT ON COLUMN block_player_exclusions.player_id IS 'The player excluded from this block';
+
+-- ----------------------------------------
 -- PLAYER IDPs (Individual Development Plans)
 -- ----------------------------------------
 -- Replaces players.target_1/2/3 with proper historical tracking
@@ -603,6 +621,10 @@ CREATE INDEX idx_session_block_attributes_block ON session_block_attributes(bloc
 CREATE INDEX idx_session_block_attributes_attribute ON session_block_attributes(attribute_key);
 CREATE INDEX idx_session_block_attributes_order_type ON session_block_attributes(block_id, order_type);
 
+-- Block Player Exclusions
+CREATE INDEX idx_block_player_exclusions_assignment ON block_player_exclusions(assignment_id);
+CREATE INDEX idx_block_player_exclusions_player ON block_player_exclusions(player_id);
+
 -- Player IDPs
 CREATE INDEX idx_player_idps_player ON player_idps(player_id);
 CREATE INDEX idx_player_idps_active ON player_idps(player_id) WHERE ended_at IS NULL;
@@ -779,6 +801,7 @@ ALTER TABLE team_facilities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE position_suggestions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_training_rule_toggles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE session_block_attributes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE block_player_exclusions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE player_idps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE player_training_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE session_feedback ENABLE ROW LEVEL SECURITY;
@@ -1361,6 +1384,43 @@ CREATE POLICY "session_attendance_delete" ON session_attendance
                     AND coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
                 )
             )
+        )
+    );
+
+-- ========================================
+-- RLS POLICIES - BLOCK PLAYER EXCLUSIONS
+-- ========================================
+
+-- Can view exclusions for accessible sessions
+CREATE POLICY "bpe_select" ON block_player_exclusions
+    FOR SELECT USING (
+        assignment_id IN (
+            SELECT sba.id FROM session_block_assignments sba
+            JOIN sessions s ON s.id = sba.session_id
+            JOIN club_memberships cm ON cm.club_id = s.club_id
+            WHERE cm.coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
+        )
+    );
+
+-- Can insert exclusions for accessible sessions
+CREATE POLICY "bpe_insert" ON block_player_exclusions
+    FOR INSERT WITH CHECK (
+        assignment_id IN (
+            SELECT sba.id FROM session_block_assignments sba
+            JOIN sessions s ON s.id = sba.session_id
+            JOIN club_memberships cm ON cm.club_id = s.club_id
+            WHERE cm.coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
+        )
+    );
+
+-- Can delete exclusions for accessible sessions
+CREATE POLICY "bpe_delete" ON block_player_exclusions
+    FOR DELETE USING (
+        assignment_id IN (
+            SELECT sba.id FROM session_block_assignments sba
+            JOIN sessions s ON s.id = sba.session_id
+            JOIN club_memberships cm ON cm.club_id = s.club_id
+            WHERE cm.coach_id = (SELECT id FROM coaches WHERE auth_user_id = auth.uid())
         )
     );
 
@@ -2831,7 +2891,10 @@ BEGIN
     END IF;
 
     -- Insert training events for each player-attribute combination
-    -- ONLY for attributes that match the player's active IDPs
+    -- ONLY for:
+    -- 1. Attributes that match the player's active IDPs
+    -- 2. Players who attended the session (status = 'present')
+    -- 3. Players NOT excluded from the specific block
     INSERT INTO player_training_events (player_id, session_id, attribute_key, weight)
     SELECT DISTINCT
         sa.player_id,
@@ -2846,6 +2909,12 @@ BEGIN
         AND pi.ended_at IS NULL
     WHERE sa.session_id = p_session_id
         AND sa.status = 'present'
+        -- Exclude players who are excluded from this specific block
+        AND NOT EXISTS (
+            SELECT 1 FROM block_player_exclusions bpe
+            WHERE bpe.assignment_id = sba_assign.id
+            AND bpe.player_id = sa.player_id
+        )
     ON CONFLICT (player_id, session_id, attribute_key) DO NOTHING;
 
     GET DIAGNOSTICS v_count = ROW_COUNT;

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
+import { CgSpinnerAlt } from "react-icons/cg";
 import { OTPInput } from "@/components/ui/OTPInput";
 import { theme } from "@/styles/theme";
 
@@ -9,8 +10,9 @@ interface OTPScreenProps {
   email: string;
   otpError: string;
   otpScreenFading: boolean;
+  isVerifying?: boolean;
   onComplete: (code: string) => void;
-  onSubmit: () => void;
+  onSubmit: (code?: string) => void;
   onBack: () => void;
 }
 
@@ -18,21 +20,19 @@ export const OTPScreen: React.FC<OTPScreenProps> = ({
   email,
   otpError,
   otpScreenFading,
+  isVerifying = false,
   onComplete,
   onSubmit,
   onBack
 }) => {
   return (
-    <div style={{ position: 'relative' }}>
-      {/* Title - positioned above the input */}
+    <div>
+      {/* Title */}
       <div
         style={{
-          position: 'absolute',
-          bottom: '100%',
-          left: 0,
-          right: 0,
-          marginBottom: theme.spacing.xl,
           textAlign: 'center',
+          marginTop: '-5vh',
+          marginBottom: theme.spacing.xl,
         }}
       >
         <h2
@@ -57,8 +57,8 @@ export const OTPScreen: React.FC<OTPScreenProps> = ({
         </p>
       </div>
 
-      {/* OTP Input - this is the anchor element */}
-      <div style={{ position: 'relative' }}>
+      {/* OTP Input */}
+      <div>
         <OTPInput
           length={6}
           onComplete={onComplete}
@@ -71,13 +71,8 @@ export const OTPScreen: React.FC<OTPScreenProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              right: 0,
               marginTop: theme.spacing.md,
               textAlign: 'center',
-              pointerEvents: 'none',
             }}
           >
             <p
@@ -92,6 +87,43 @@ export const OTPScreen: React.FC<OTPScreenProps> = ({
           </motion.div>
         )}
       </div>
+
+      {/* Loading indicator */}
+      {isVerifying && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          style={{
+            marginTop: theme.spacing.lg,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            style={{
+              display: 'inline-block',
+            }}
+          >
+            <CgSpinnerAlt
+              size={16}
+              color={theme.colors.gold.main}
+            />
+          </motion.div>
+          <p
+            style={{
+              color: theme.colors.text.muted,
+              fontSize: theme.typography.fontSize.sm,
+              margin: 0,
+            }}
+          >
+            Verifying...
+          </p>
+        </motion.div>
+      )}
 
       {/* Back to email link */}
       <div

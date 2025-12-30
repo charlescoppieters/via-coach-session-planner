@@ -11,7 +11,8 @@ import { type AssignedBlock } from '@/lib/sessionBlocks';
 
 const supabase = createClient();
 import { updateSession } from '@/lib/sessions';
-import type { Session } from '@/types/database';
+import { getClubGameModelZones } from '@/lib/methodology';
+import type { Session, GameModelZones, SessionThemeSnapshot } from '@/types/database';
 
 // Generate arrays for picker options
 const playerOptions = Array.from({ length: 99 }, (_, i) => i + 1);
@@ -435,6 +436,7 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
   const [playerCount, setPlayerCount] = useState<number>(1);
   const [duration, setDuration] = useState<number>(60);
   const [isLoading, setIsLoading] = useState(false);
+  const [gameModel, setGameModel] = useState<GameModelZones | null>(null);
 
   // Picker modal states
   const [showPlayerPicker, setShowPlayerPicker] = useState(false);
@@ -491,6 +493,24 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
 
     fetchSession();
   }, [sessionId]);
+
+  // Fetch game model when session is loaded
+  useEffect(() => {
+    const fetchGameModel = async () => {
+      if (!session?.club_id) {
+        setGameModel(null);
+        return;
+      }
+
+      const { data, error } = await getClubGameModelZones(session.club_id);
+      if (error) {
+        console.error('Failed to fetch game model:', error);
+      }
+      setGameModel(data);
+    };
+
+    fetchGameModel();
+  }, [session?.club_id]);
 
   // Generic save function for any field
   const saveField = async (field: string, value: string | number) => {
@@ -837,6 +857,8 @@ export const SessionEditor: React.FC<SessionEditorProps> = ({
           teamId={session?.team_id || null}
           readOnly={false}
           onBlocksChange={handleBlocksChange}
+          gameModel={gameModel}
+          sessionTheme={(session as Session & { theme_snapshot?: SessionThemeSnapshot })?.theme_snapshot || null}
         />
 
         {/* AI Loading Overlay */}

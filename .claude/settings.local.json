@@ -6,7 +6,8 @@
       "WebFetch(domain:docs.stripe.com)",
       "Bash(ls:*)",
       "Bash(cat:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []

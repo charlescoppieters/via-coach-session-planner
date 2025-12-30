@@ -7,7 +7,6 @@ interface TeamCreationStepProps {
   onNext: (teamData: {
     name: string;
     age_group: string;
-    skill_level: string;
     player_count: number;
     sessions_per_week: number;
     session_duration: number;
@@ -20,7 +19,6 @@ export const TeamCreationStep: React.FC<TeamCreationStepProps> = ({ onNext, onBa
   const [teamData, setTeamData] = useState({
     name: '',
     age_group: '',
-    skill_level: '',
     player_count: 0,
     sessions_per_week: 0,
     session_duration: 0,
@@ -35,10 +33,6 @@ export const TeamCreationStep: React.FC<TeamCreationStepProps> = ({ onNext, onBa
     }
     if (!teamData.age_group.trim()) {
       alert('Please enter an age group');
-      return;
-    }
-    if (!teamData.skill_level.trim()) {
-      alert('Please enter a skill level');
       return;
     }
     if (teamData.player_count <= 0) {
@@ -58,7 +52,6 @@ export const TeamCreationStep: React.FC<TeamCreationStepProps> = ({ onNext, onBa
       ...teamData,
       name: teamData.name.trim(),
       age_group: teamData.age_group.trim(),
-      skill_level: teamData.skill_level.trim(),
       gender: teamData.gender || null,
     });
   };
@@ -66,7 +59,6 @@ export const TeamCreationStep: React.FC<TeamCreationStepProps> = ({ onNext, onBa
   const isValid =
     teamData.name.trim() &&
     teamData.age_group.trim() &&
-    teamData.skill_level.trim() &&
     teamData.player_count > 0 &&
     teamData.sessions_per_week > 0 &&
     teamData.session_duration > 0;
@@ -164,44 +156,6 @@ export const TeamCreationStep: React.FC<TeamCreationStepProps> = ({ onNext, onBa
             value={teamData.age_group}
             onChange={(e) => setTeamData({ ...teamData, age_group: e.target.value })}
             placeholder="e.g., U12, U15"
-            style={{
-              width: '100%',
-              padding: theme.spacing.md,
-              fontSize: theme.typography.fontSize.base,
-              color: theme.colors.text.primary,
-              backgroundColor: theme.colors.background.primary,
-              border: `2px solid ${theme.colors.border.primary}`,
-              borderRadius: theme.borderRadius.md,
-              outline: 'none',
-              boxSizing: 'border-box',
-            }}
-            onFocus={(e) => {
-              e.target.style.borderColor = theme.colors.gold.main;
-            }}
-            onBlur={(e) => {
-              e.target.style.borderColor = theme.colors.border.primary;
-            }}
-          />
-        </div>
-
-        {/* Skill Level */}
-        <div>
-          <label style={{
-            display: 'block',
-            fontSize: theme.typography.fontSize.sm,
-            fontWeight: theme.typography.fontWeight.semibold,
-            color: theme.colors.text.secondary,
-            marginBottom: theme.spacing.xs,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}>
-            Skill Level *
-          </label>
-          <input
-            type="text"
-            value={teamData.skill_level}
-            onChange={(e) => setTeamData({ ...teamData, skill_level: e.target.value })}
-            placeholder="e.g., Beginner, Intermediate"
             style={{
               width: '100%',
               padding: theme.spacing.md,
@@ -339,8 +293,8 @@ export const TeamCreationStep: React.FC<TeamCreationStepProps> = ({ onNext, onBa
           />
         </div>
 
-        {/* Gender */}
-        <div>
+        {/* Gender - Full width */}
+        <div style={{ gridColumn: 'span 2' }}>
           <label style={{
             display: 'block',
             fontSize: theme.typography.fontSize.sm,

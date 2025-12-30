@@ -657,6 +657,7 @@ export type Database = {
           id: string
           position: number
           session_id: string
+          slot_index: number
         }
         Insert: {
           block_id: string
@@ -664,6 +665,7 @@ export type Database = {
           id?: string
           position: number
           session_id: string
+          slot_index?: number
         }
         Update: {
           block_id?: string
@@ -671,6 +673,7 @@ export type Database = {
           id?: string
           position?: number
           session_id?: string
+          slot_index?: number
         }
         Relationships: [
           {
@@ -685,6 +688,42 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      block_player_exclusions: {
+        Row: {
+          assignment_id: string
+          created_at: string
+          id: string
+          player_id: string
+        }
+        Insert: {
+          assignment_id: string
+          created_at?: string
+          id?: string
+          player_id: string
+        }
+        Update: {
+          assignment_id?: string
+          created_at?: string
+          id?: string
+          player_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "block_player_exclusions_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "session_block_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "block_player_exclusions_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -1393,6 +1432,7 @@ export type Session = Tables<'sessions'>
 export type SessionInsert = TablesInsert<'sessions'>
 export type SessionUpdate = TablesUpdate<'sessions'>
 export type SessionAttendance = Tables<'session_attendance'>
+export type BlockPlayerExclusion = Tables<'block_player_exclusions'>
 export type SessionAttendanceInsert = TablesInsert<'session_attendance'>
 export type SessionAttendanceUpdate = TablesUpdate<'session_attendance'>
 export type SessionFeedback = Tables<'session_feedback'>
@@ -1628,6 +1668,58 @@ export function isTrainingSyllabus(data: unknown): data is TrainingSyllabus {
   if (!data || typeof data !== 'object') return false
   const s = data as Record<string, unknown>
   return Array.isArray(s.weeks)
+}
+
+// ========================================
+// Session-Syllabus Integration Types
+// ========================================
+
+/**
+ * Flattened syllabus slot for display in session creation
+ * Represents a single training day with a theme
+ */
+export interface SyllabusSlot {
+  weekIndex: number           // 0-indexed week number
+  weekOrder: number           // 1-indexed display order
+  dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6
+  dayName: string             // e.g., "Monday", "Tuesday"
+  theme: ThemeSelection       // The theme for this slot (never null - only slots with themes are included)
+}
+
+/**
+ * Theme snapshot stored on sessions
+ * Denormalized copy of theme data for historical reference
+ * Survives even if the syllabus is later modified
+ */
+export interface SessionThemeSnapshot {
+  zoneName: string
+  blockType: 'in_possession' | 'out_of_possession'
+  blockName: string
+}
+
+/**
+ * Extended session fields for syllabus integration
+ * These fields link a session to a specific syllabus slot
+ * If syllabus_week_index is null, the session was created manually
+ */
+export interface SessionSyllabusFields {
+  syllabus_week_index: number | null   // 0-indexed week from syllabus
+  syllabus_day_of_week: number | null  // 0=Mon, 6=Sun
+  theme_block_id: string | null        // References ZoneBlock.id
+  theme_snapshot: SessionThemeSnapshot | null
+}
+
+/**
+ * Session with syllabus fields
+ * Use this when you need the extended session type with theme data
+ */
+export type SessionWithSyllabus = Session & SessionSyllabusFields
+
+/**
+ * Type guard to check if a session has syllabus data
+ */
+export function isSessionFromSyllabus(session: Session | SessionWithSyllabus): session is SessionWithSyllabus {
+  return 'syllabus_week_index' in session && session.syllabus_week_index !== null
 }
 
 // ========================================

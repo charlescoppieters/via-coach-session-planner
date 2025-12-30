@@ -9,7 +9,7 @@ import { WelcomeStep } from '@/components/onboarding/WelcomeStep'
 import { ClubSetupStep } from '@/components/onboarding/ClubSetupStep'
 import { ProfileSetupStep } from '@/components/onboarding/ProfileSetupStep'
 import { GameModelStep } from '@/components/onboarding/GameModelStep'
-import { TrainingMethodologyStep } from '@/components/onboarding/TrainingMethodologyStep'
+import { TrainingSyllabusStep } from '@/components/onboarding/TrainingSyllabusStep'
 import { PositionalProfilingStep } from '@/components/onboarding/PositionalProfilingStep'
 import { TeamCreationStep } from '@/components/onboarding/TeamCreationStep'
 import { TeamFacilitiesStep } from '@/components/onboarding/TeamFacilitiesStep'
@@ -32,7 +32,6 @@ type Step =
 interface TeamFormData {
   name: string
   age_group: string
-  skill_level: string
   player_count: number
   sessions_per_week: number
   session_duration: number
@@ -94,15 +93,38 @@ export default function OnboardingPage() {
     }
   }, [user, coach, loading, router, isReady])
 
+
   // Determine if we need to show club step (admins creating new club)
   const needsClubStep = !club && !createdClubThisSession
 
   // Determine if this is an invited coach (has club, not admin)
   const isInvitedCoach = club && !isAdmin
 
-  const handleWelcomeNext = () => {
+  const handleWelcomeNext = async () => {
     if (needsClubStep) {
       setCurrentStep('club')
+      return
+    }
+
+    // Check progress and skip to first incomplete step
+    if (club && coach) {
+      const { getOnboardingProgress } = await import('@/lib/onboarding')
+      const progress = await getOnboardingProgress(coach.id, club.id)
+
+      if (!progress.hasProfile) {
+        setCurrentStep('profile')
+      } else if (!progress.hasGameModel) {
+        setCurrentStep('playing_methodology')
+      } else if (!progress.hasTrainingSyllabus) {
+        setCurrentStep('training_methodology')
+      } else if (!progress.hasPositionalProfiles) {
+        setCurrentStep('positional_profiling')
+      } else if (!progress.hasTeam) {
+        setCurrentStep('team_details')
+      } else {
+        // All steps complete - shouldn't happen but go to profile as fallback
+        setCurrentStep('profile')
+      }
     } else {
       setCurrentStep('profile')
     }
@@ -135,6 +157,22 @@ export default function OnboardingPage() {
     profilePicturePath: string | null
   }) => {
     setProfileData(data)
+
+    // Save profile immediately for admin coaches (so progress is persisted)
+    if (!isInvitedCoach && coach?.id) {
+      setIsSubmitting(true)
+      const { updateCoachProfile } = await import('@/lib/onboarding')
+      const profileResult = await updateCoachProfile(coach.id, {
+        name: data.name,
+        profile_picture: data.profilePicturePath || undefined,
+      })
+      setIsSubmitting(false)
+
+      if (profileResult.error) {
+        setError(profileResult.error)
+        return
+      }
+    }
 
     // Invited coaches skip all methodology and team steps - just save profile and complete
     if (isInvitedCoach) {
@@ -273,7 +311,7 @@ export default function OnboardingPage() {
         created_by_coach_id: coach.id,
         name: teamData.name,
         age_group: teamData.age_group,
-        skill_level: teamData.skill_level,
+        skill_level: '', // Optional field, not collected in onboarding
         gender: teamData.gender,
         player_count: teamData.player_count,
         sessions_per_week: teamData.sessions_per_week,
@@ -353,16 +391,14 @@ export default function OnboardingPage() {
       transition={{ duration: 0.25, ease: 'easeOut' }}
       style={{
         width: '100vw',
-        height: '100vh',
+        minHeight: '100vh',
         backgroundColor: theme.colors.background.primary,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        overflow: 'hidden',
+        padding: theme.spacing.xl,
+        boxSizing: 'border-box',
       }}
     >
 
@@ -370,11 +406,8 @@ export default function OnboardingPage() {
       {error && (
         <div
           style={{
-            position: 'absolute',
-            top: '120px',
-            left: '50%',
-            transform: 'translateX(-50%)',
             maxWidth: '600px',
+            marginBottom: theme.spacing.md,
             padding: theme.spacing.md,
             backgroundColor: 'rgba(255, 0, 0, 0.1)',
             border: `2px solid ${theme.colors.status.error}`,
@@ -391,14 +424,12 @@ export default function OnboardingPage() {
       {/* Step Content */}
       <div
         style={{
-          width: '90%',
-          maxWidth: '1000px',
-          maxHeight: '85vh',
+          width: '95%',
+          maxWidth: currentStep === 'training_methodology' ? '1280px' : '1000px',
           backgroundColor: theme.colors.background.secondary,
           borderRadius: theme.borderRadius.lg,
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
           overflowY: 'auto',
-          overflow: 'hidden',
         }}
       >
         <AnimatePresence mode="wait">
@@ -474,7 +505,7 @@ export default function OnboardingPage() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
             >
-              <TrainingMethodologyStep
+              <TrainingSyllabusStep
                 clubId={club.id}
                 coachId={coach.id}
                 onNext={handleTrainingMethodologyNext}

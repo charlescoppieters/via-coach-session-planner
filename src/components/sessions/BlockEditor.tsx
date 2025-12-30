@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -20,23 +20,30 @@ import { FiPlus } from 'react-icons/fi';
 import { CgSpinnerAlt } from 'react-icons/cg';
 import { theme } from '@/styles/theme';
 import { SortableBlock } from './blocks/SortableBlock';
-import { TrainingBlock } from './blocks/TrainingBlock';
+import { BlockGroup } from './blocks/BlockGroup';
 import { BlockEditorModal } from './BlockEditorModal';
 import { BlockPickerModal } from './BlockPickerModal';
 import {
   type AssignedBlock,
   type SessionBlock,
   type BlockAttribute,
+  type BlockGroup as BlockGroupType,
   getSessionBlocks,
   createAndAssignBlock,
   assignBlockToSession,
   removeBlockFromSession,
-  updateAssignmentPositions,
+  updateGroupPositions,
   editBlockWithCopyOnWrite,
   saveBlockAttributes,
+  groupBlocksByPosition,
+  addSimultaneousPractice,
+  removeFromGroup,
+  syncGroupDuration,
 } from '@/lib/sessionBlocks';
 import type { BlockSaveData } from './BlockEditorModal';
 import type { TacticsElement } from '@/components/tactics/types';
+import { setBlockExclusions } from '@/lib/blockAttendance';
+import type { GameModelZones, SessionThemeSnapshot } from '@/types/database';
 
 interface BlockEditorProps {
   sessionId: string;
@@ -45,6 +52,8 @@ interface BlockEditorProps {
   teamId?: string | null;
   readOnly?: boolean;
   onBlocksChange?: (blocks: AssignedBlock[]) => void;
+  gameModel?: GameModelZones | null;
+  sessionTheme?: SessionThemeSnapshot | null;
 }
 
 export const BlockEditor: React.FC<BlockEditorProps> = ({
@@ -54,12 +63,18 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   teamId,
   readOnly = false,
   onBlocksChange,
+  gameModel,
+  sessionTheme,
 }) => {
   const [blocks, setBlocks] = useState<AssignedBlock[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingBlock, setEditingBlock] = useState<AssignedBlock | null>(null);
+  const [addSimultaneousPosition, setAddSimultaneousPosition] = useState<number | null>(null);
+
+  // Group blocks by position for rendering
+  const blockGroups = useMemo(() => groupBlocksByPosition(blocks), [blocks]);
 
   // Sensors for drag and drop
   const sensors = useSensors(
@@ -95,55 +110,106 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     onBlocksChange?.(blocks);
   }, [blocks, onBlocksChange]);
 
-  // Handle drag end
+  // Handle drag end - now works with groups
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
       const { active, over } = event;
 
       if (over && active.id !== over.id) {
-        const oldIndex = blocks.findIndex((b) => b.assignment_id === active.id);
-        const newIndex = blocks.findIndex((b) => b.assignment_id === over.id);
+        const oldIndex = blockGroups.findIndex((g) => `group-${g.position}` === active.id);
+        const newIndex = blockGroups.findIndex((g) => `group-${g.position}` === over.id);
 
-        const newBlocks = arrayMove(blocks, oldIndex, newIndex);
+        if (oldIndex === -1 || newIndex === -1) return;
 
-        // Update positions
-        const updatedBlocks = newBlocks.map((block, index) => ({
-          ...block,
-          position: index,
-        }));
+        const newGroups = arrayMove(blockGroups, oldIndex, newIndex);
+
+        // Assign new positions to all blocks in all groups
+        const updatedBlocks = newGroups.flatMap((group, newPos) =>
+          group.practices.map((p) => ({ ...p, position: newPos }))
+        );
 
         setBlocks(updatedBlocks);
 
-        // Persist to database
-        await updateAssignmentPositions(
-          updatedBlocks.map((b) => ({ id: b.assignment_id, position: b.position }))
-        );
+        // Persist to database - update positions for each group
+        const positionUpdates = newGroups.map((group, newPos) => ({
+          position: newPos,
+          assignmentIds: group.practices.map((p) => p.assignment_id),
+        }));
+
+        await updateGroupPositions(positionUpdates);
       }
     },
-    [blocks]
+    [blockGroups]
   );
 
-  // Open picker to add a block
+  // Open picker to add a new block group
   const handleAddBlock = () => {
+    setAddSimultaneousPosition(null);
+    setShowPicker(true);
+  };
+
+  // Handle adding a simultaneous practice to an existing group
+  const handleAddSimultaneous = (position: number) => {
+    setAddSimultaneousPosition(position);
     setShowPicker(true);
   };
 
   // Handle selecting an existing block from picker
   const handleSelectExistingBlock = async (block: SessionBlock) => {
-    const position = blocks.length;
-    const { data, error } = await assignBlockToSession(sessionId, block.id, position);
-    if (error) {
-      console.error('Failed to assign block:', error);
-      return;
+    if (addSimultaneousPosition !== null) {
+      // Adding as simultaneous practice to existing group
+      const { data, error } = await addSimultaneousPractice(
+        sessionId,
+        block.id,
+        addSimultaneousPosition
+      );
+      if (error) {
+        console.error('Failed to add simultaneous practice:', error);
+        setAddSimultaneousPosition(null);
+        setShowPicker(false);
+        return;
+      }
+
+      // Get the primary practice's duration to sync
+      const primaryPractice = blocks.find(
+        (b) => b.position === addSimultaneousPosition && b.slot_index === 0
+      );
+      const syncedDuration = primaryPractice?.duration ?? block.duration;
+
+      // Sync duration across the group if primary has a duration
+      if (syncedDuration) {
+        await syncGroupDuration(sessionId, addSimultaneousPosition, syncedDuration);
+      }
+
+      // Add to local state with synced duration
+      const assignedBlock: AssignedBlock = {
+        ...block,
+        assignment_id: data!.id,
+        position: data!.position,
+        slot_index: data!.slot_index,
+        duration: syncedDuration,
+      };
+      setBlocks((prev) => [...prev, assignedBlock]);
+      setAddSimultaneousPosition(null);
+      setShowPicker(false);
+    } else {
+      // Adding as new block group
+      const position = blockGroups.length;
+      const { data, error } = await assignBlockToSession(sessionId, block.id, position);
+      if (error) {
+        console.error('Failed to assign block:', error);
+        return;
+      }
+      // Add to local state
+      const assignedBlock: AssignedBlock = {
+        ...block,
+        assignment_id: data!.id,
+        position: data!.position,
+        slot_index: data!.slot_index,
+      };
+      setBlocks((prev) => [...prev, assignedBlock]);
+      setShowPicker(false);
     }
-    // Add to local state
-    const assignedBlock: AssignedBlock = {
-      ...block,
-      assignment_id: data!.id,
-      position: data!.position,
-    };
-    setBlocks((prev) => [...prev, assignedBlock]);
-    setShowPicker(false);
   };
 
   // Handle "Create Training Block" from picker
@@ -193,18 +259,34 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
       if (updatedBlock) {
         blockId = updatedBlock.id;
-        // Update local state
+        // Update local state (preserve slot_index)
         setBlocks((prev) =>
           prev.map((b) =>
             b.assignment_id === editingBlock.assignment_id
-              ? { ...updatedBlock, assignment_id: b.assignment_id, position: b.position }
+              ? { ...updatedBlock, assignment_id: b.assignment_id, position: b.position, slot_index: b.slot_index }
               : b
           )
         );
+
+        // Sync duration across the group if this block has a duration
+        if (data.duration !== null && data.duration !== undefined) {
+          await syncGroupDuration(sessionId, editingBlock.position, data.duration);
+          // Update local state to reflect synced duration
+          setBlocks((prev) =>
+            prev.map((b) =>
+              b.position === editingBlock.position
+                ? { ...b, duration: data.duration }
+                : b
+            )
+          );
+        }
       }
     } else {
-      // Create new block
-      const position = blocks.length;
+      // Create new block - determine position and slot_index
+      const isSimultaneous = addSimultaneousPosition !== null;
+      const position = isSimultaneous ? addSimultaneousPosition : blockGroups.length;
+      const slotIndex = isSimultaneous ? 1 : 0;
+
       const { data: newBlock, error } = await createAndAssignBlock(
         sessionId,
         {
@@ -220,8 +302,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           is_public: false,
           source: 'user',
         },
-        position
+        position,
+        slotIndex
       );
+
+      // Clear simultaneous position after creation
+      setAddSimultaneousPosition(null);
 
       if (error) {
         console.error('Failed to create block:', error);
@@ -231,6 +317,18 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       if (newBlock) {
         blockId = newBlock.id;
         setBlocks((prev) => [...prev, newBlock]);
+
+        // Save player exclusions if any were specified during creation
+        if (data.excludedPlayerIds && data.excludedPlayerIds.length > 0) {
+          const { error: exclusionError } = await setBlockExclusions(
+            newBlock.assignment_id,
+            data.excludedPlayerIds
+          );
+          if (exclusionError) {
+            console.error('Failed to save player exclusions:', exclusionError);
+            // Don't throw - the block was saved successfully, just exclusions failed
+          }
+        }
       }
     }
 
@@ -250,31 +348,67 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     setEditingBlock(null);
   };
 
-  // Delete block (remove assignment)
+  // Delete block (remove assignment) - called from modal
   const handleDeleteBlock = async () => {
     if (!editingBlock) return;
 
-    const { error } = await removeBlockFromSession(editingBlock.assignment_id);
-
-    if (error) {
-      console.error('Failed to remove block:', error);
-      throw error;
-    }
-
-    // Update local state
-    const newBlocks = blocks.filter((b) => b.assignment_id !== editingBlock.assignment_id);
-    const reorderedBlocks = newBlocks.map((b, i) => ({ ...b, position: i }));
-    setBlocks(reorderedBlocks);
-
-    // Update positions in database
-    if (reorderedBlocks.length > 0) {
-      await updateAssignmentPositions(
-        reorderedBlocks.map((b) => ({ id: b.assignment_id, position: b.position }))
-      );
-    }
+    await handleRemoveFromGroup(editingBlock.assignment_id);
 
     setShowModal(false);
     setEditingBlock(null);
+  };
+
+  // Remove a block from a group (handles promotion and reordering)
+  const handleRemoveFromGroup = async (assignmentId: string) => {
+    const blockToRemove = blocks.find((b) => b.assignment_id === assignmentId);
+    if (!blockToRemove) return;
+
+    const { error } = await removeFromGroup(assignmentId);
+
+    if (error) {
+      console.error('Failed to remove block from group:', error);
+      return;
+    }
+
+    // Update local state
+    const remainingBlocks = blocks.filter((b) => b.assignment_id !== assignmentId);
+
+    // Check if this was a simultaneous block (slot_index 1) or primary block
+    const wasSimultaneous = blockToRemove.slot_index === 1;
+
+    if (wasSimultaneous) {
+      // Just remove it, no reordering needed
+      setBlocks(remainingBlocks);
+    } else {
+      // Was primary (slot 0) - check if there was a simultaneous block to promote
+      const siblingBlock = blocks.find(
+        (b) => b.position === blockToRemove.position && b.slot_index === 1
+      );
+
+      if (siblingBlock) {
+        // Promote sibling to slot 0
+        const updatedBlocks = remainingBlocks.map((b) =>
+          b.assignment_id === siblingBlock.assignment_id
+            ? { ...b, slot_index: 0 }
+            : b
+        );
+        setBlocks(updatedBlocks);
+      } else {
+        // No sibling - need to reorder groups
+        const newGroups = groupBlocksByPosition(remainingBlocks);
+        const reorderedBlocks = newGroups.flatMap((group, newPos) =>
+          group.practices.map((p) => ({ ...p, position: newPos }))
+        );
+        setBlocks(reorderedBlocks);
+
+        // Persist the new positions
+        const positionUpdates = newGroups.map((group, newPos) => ({
+          position: newPos,
+          assignmentIds: group.practices.map((p) => p.assignment_id),
+        }));
+        await updateGroupPositions(positionUpdates);
+      }
+    }
   };
 
   if (isLoading) {
@@ -322,18 +456,20 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           onDragEnd={handleDragEnd}
         >
           <SortableContext
-            items={blocks.map((b) => b.assignment_id)}
+            items={blockGroups.map((g) => `group-${g.position}`)}
             strategy={verticalListSortingStrategy}
           >
-            {blocks.map((block) => (
-              <div key={block.assignment_id} style={{ marginBottom: theme.spacing.md }}>
+            {blockGroups.map((group) => (
+              <div key={`group-${group.position}`} style={{ marginBottom: theme.spacing.md }}>
                 <SortableBlock
-                  id={block.assignment_id}
+                  id={`group-${group.position}`}
                   disabled={readOnly}
                 >
-                  <TrainingBlock
-                    block={block}
-                    onClick={() => handleEditBlock(block)}
+                  <BlockGroup
+                    group={group}
+                    onBlockClick={handleEditBlock}
+                    onAddSimultaneous={handleAddSimultaneous}
+                    onRemoveBlock={handleRemoveFromGroup}
                     readOnly={readOnly}
                   />
                 </SortableBlock>
@@ -397,11 +533,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         <BlockPickerModal
           onSelectBlock={handleSelectExistingBlock}
           onCreateNew={handleCreateFromPicker}
-          onCancel={() => setShowPicker(false)}
+          onCancel={() => {
+            setShowPicker(false);
+            setAddSimultaneousPosition(null);
+          }}
           coachId={coachId}
           clubId={clubId}
           teamId={teamId}
           excludeBlockIds={blocks.map((b) => b.id)}
+          mode={addSimultaneousPosition !== null ? 'simultaneous' : 'new'}
         />
       )}
 
@@ -414,7 +554,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           onCancel={() => {
             setShowModal(false);
             setEditingBlock(null);
+            setAddSimultaneousPosition(null);
           }}
+          teamId={teamId}
+          assignmentId={editingBlock?.assignment_id || null}
+          gameModel={gameModel}
+          sessionTheme={sessionTheme}
         />
       )}
     </div>

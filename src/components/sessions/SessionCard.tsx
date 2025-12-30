@@ -2,10 +2,15 @@ import React from 'react';
 import { FaEye, FaRegTrashAlt, FaRegCommentDots } from 'react-icons/fa';
 import { MdEdit } from 'react-icons/md';
 import { theme } from '@/styles/theme';
-import type { Session } from '@/types/database';
+import type { Session, SessionThemeSnapshot } from '@/types/database';
+
+// Extended session type that includes syllabus fields
+interface SessionWithTheme extends Session {
+  theme_snapshot?: SessionThemeSnapshot | null;
+}
 
 interface SessionCardProps {
-  session: Session;
+  session: SessionWithTheme;
   teamName: string;
   onView: (sessionId: string) => void;
   onEdit?: (sessionId: string) => void;
@@ -63,7 +68,7 @@ export const SessionCard: React.FC<SessionCardProps> = ({
             fontWeight: theme.typography.fontWeight.bold,
             color: theme.colors.text.primary,
             margin: 0,
-            marginBottom: theme.spacing.md,
+            marginBottom: theme.spacing.sm,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -71,6 +76,45 @@ export const SessionCard: React.FC<SessionCardProps> = ({
         >
           {session.title}
         </h3>
+
+        {/* Theme Badge - placeholder space when no theme */}
+        <div
+          style={{
+            minHeight: '24px',
+            marginBottom: theme.spacing.md,
+          }}
+        >
+          {session.theme_snapshot && (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
+                backgroundColor: 'rgba(239, 191, 4, 0.15)',
+                borderRadius: theme.borderRadius.sm,
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: theme.colors.gold.main,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: theme.typography.fontSize.xs,
+                  color: theme.colors.gold.main,
+                  fontWeight: theme.typography.fontWeight.medium,
+                }}
+              >
+                {session.theme_snapshot.zoneName}
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Session Date */}
         <div

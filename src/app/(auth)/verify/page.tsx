@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import { OTPScreen } from '@/components/auth/OTPScreen'
 import { verifyOTP } from '@/lib/auth'
 import { useAuth } from '@/contexts/AuthContext'
+import { useAuthTransition } from '@/contexts/AuthTransitionContext'
 
 export default function VerifyPage() {
   const router = useRouter()
   const { user, coach, club, loading, refreshAuth } = useAuth()
+  const { triggerFadeOut } = useAuthTransition()
 
   const [email, setEmail] = useState('')
   const [otpCode, setOtpCode] = useState('')
@@ -30,9 +32,6 @@ export default function VerifyPage() {
   // Handle redirect after authentication
   useEffect(() => {
     if (!loading && user && coach && !isVerifying) {
-      // Clear session storage
-      sessionStorage.removeItem('pendingEmail')
-
       // If onboarding completed, go to dashboard
       if (coach.onboarding_completed) {
         router.replace('/')
@@ -55,13 +54,14 @@ export default function VerifyPage() {
     setOtpCode(code)
   }
 
-  const handleOTPSubmit = async () => {
-    if (otpCode.length !== 6) return
+  const handleOTPSubmit = async (code?: string) => {
+    const codeToVerify = code || otpCode
+    if (codeToVerify.length !== 6) return
 
     setIsVerifying(true)
     setOtpError('')
 
-    const { error } = await verifyOTP(email, otpCode)
+    const { error } = await verifyOTP(email, codeToVerify)
 
     if (error) {
       setOtpError(error)
@@ -69,11 +69,17 @@ export default function VerifyPage() {
       return
     }
 
-    // Refresh auth to get updated data
+    // Start fade and refresh auth in parallel
     setOtpScreenFading(true)
-    await refreshAuth()
+    const [, ] = await Promise.all([
+      triggerFadeOut(),
+      refreshAuth()
+    ])
+
+    // Clear session storage
+    sessionStorage.removeItem('pendingEmail')
+
     setIsVerifying(false)
-    // Navigation will happen via useEffect
   }
 
   const handleBack = () => {
@@ -90,6 +96,7 @@ export default function VerifyPage() {
       email={email}
       otpError={otpError}
       otpScreenFading={otpScreenFading}
+      isVerifying={isVerifying}
       onComplete={handleOTPComplete}
       onSubmit={handleOTPSubmit}
       onBack={handleBack}

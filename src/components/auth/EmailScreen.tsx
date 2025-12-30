@@ -36,6 +36,7 @@ export const EmailScreen: React.FC<EmailScreenProps> = ({
             if (showEmailError) setShowEmailError(false);
           }}
           onSubmit={onSubmit}
+          error={showEmailError}
           style={{
             fontSize: theme.typography.fontSize.base,
             padding: theme.spacing.md,
@@ -61,11 +62,10 @@ export const EmailScreen: React.FC<EmailScreenProps> = ({
         >
           <p
             style={{
-              color: theme.colors.text.muted,
+              color: '#EF5350',
               fontSize: theme.typography.fontSize.sm,
               margin: 0,
               textAlign: 'center',
-              fontStyle: 'italic',
             }}
           >
             Please enter a valid email address

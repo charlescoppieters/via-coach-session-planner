@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { theme } from "@/styles/theme";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ScreenSizeGuard } from "@/components/layout/ScreenSizeGuard";
 import "@/styles/globals.css";
 
 const inter = Inter({
@@ -32,9 +33,11 @@ export default function RootLayout({
           minHeight: '100vh',
         }}
       >
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <ScreenSizeGuard>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </ScreenSizeGuard>
       </body>
     </html>
   );

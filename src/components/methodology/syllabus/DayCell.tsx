@@ -1,7 +1,6 @@
 'use client'
 
 import React from 'react'
-import { FaComment } from 'react-icons/fa'
 import { theme } from '@/styles/theme'
 import type { SyllabusDay } from '@/types/database'
 
@@ -15,7 +14,6 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export function DayCell({ day, onClick, readOnly = false }: DayCellProps) {
   const hasTheme = day.theme !== null
-  const hasComments = day.comments !== null && day.comments.trim() !== ''
 
   return (
     <div
@@ -25,11 +23,9 @@ export function DayCell({ day, onClick, readOnly = false }: DayCellProps) {
         minWidth: '150px',
         height: '85px',
         backgroundColor: hasTheme
-          ? day.theme?.blockType === 'in_possession'
-            ? 'rgba(217, 179, 76, 0.15)'
-            : 'rgba(220, 53, 69, 0.15)'
+          ? 'rgba(217, 179, 76, 0.15)'
           : theme.colors.background.tertiary,
-        border: `1px solid ${hasTheme ? (day.theme?.blockType === 'in_possession' ? theme.colors.gold.main : theme.colors.status.error) : theme.colors.border.primary}`,
+        border: `1px solid ${hasTheme ? theme.colors.gold.main : theme.colors.border.primary}`,
         borderRadius: theme.borderRadius.md,
         padding: theme.spacing.sm,
         cursor: readOnly ? 'default' : 'pointer',
@@ -100,19 +96,6 @@ export function DayCell({ day, onClick, readOnly = false }: DayCellProps) {
         )}
       </div>
 
-      {/* Comments indicator */}
-      {hasComments && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: theme.spacing.xs,
-            right: theme.spacing.xs,
-            color: theme.colors.text.muted,
-          }}
-        >
-          <FaComment size={10} />
-        </div>
-      )}
     </div>
   )
 }

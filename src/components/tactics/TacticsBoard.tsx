@@ -7,6 +7,7 @@ import { PitchBackground } from './PitchBackground';
 import { TacticsToolbar } from './TacticsToolbar';
 import { PlayerElement } from './elements/PlayerElement';
 import { ConeElement } from './elements/ConeElement';
+import { MinigoalElement } from './elements/MinigoalElement';
 import { ArrowElement } from './elements/ArrowElement';
 import { LineElement } from './elements/LineElement';
 import {
@@ -63,16 +64,30 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [pitchView, setPitchView] = useState<PitchView>('full');
 
+  // Track if we've initialized from initialData to avoid infinite loops
+  const initializedRef = useRef(false);
+  const lastInitialDataRef = useRef<string | null>(null);
+
   // Sync elements when initialData changes (for re-editing saved diagrams)
+  // Only sync if the serialized data actually changed (not just reference)
   useEffect(() => {
     if (initialData?.elements) {
-      setElements(initialData.elements);
+      const serialized = JSON.stringify(initialData.elements);
+      if (serialized !== lastInitialDataRef.current) {
+        lastInitialDataRef.current = serialized;
+        if (initializedRef.current) {
+          // Only update if this is a genuine external change (e.g., loading different diagram)
+          setElements(initialData.elements);
+        }
+      }
     }
+    initializedRef.current = true;
   }, [initialData?.elements]);
   // Track color per tool type so each tool remembers its color
   const [toolColors, setToolColors] = useState<Record<string, string>>({
     player: DEFAULT_COLOR,
     cone: '#F97316', // Orange
+    minigoal: '#FFFFFF', // White
     arrow: '#FFFFFF',
     line: '#FFFFFF',
   });
@@ -151,6 +166,16 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
         color: selectedColor,
       };
       setElements(prev => [...prev, newCone]);
+    } else if (selectedTool === 'minigoal' && e.target === stage) {
+      const newMinigoal: TacticsElement = {
+        type: 'minigoal',
+        id: generateId(),
+        x: refX,
+        y: refY,
+        rotation: 90, // Default to horizontal (facing up/down the pitch)
+        color: selectedColor,
+      };
+      setElements(prev => [...prev, newMinigoal]);
     }
   }, [selectedTool, selectedColor, playerCounter, readOnly, scale]);
 
@@ -236,13 +261,24 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
     setElements(prev =>
       prev.map(el => {
         if (el.id !== id) return el;
-        if (el.type === 'player' || el.type === 'cone') {
+        if (el.type === 'player' || el.type === 'cone' || el.type === 'minigoal') {
           return { ...el, x, y };
         }
         return el;
       })
     );
   }, []);
+
+  // Rotate selected minigoal by 90 degrees
+  const handleRotateSelected = useCallback(() => {
+    if (!selectedElementId) return;
+    setElements(prev =>
+      prev.map(el => {
+        if (el.id !== selectedElementId || el.type !== 'minigoal') return el;
+        return { ...el, rotation: (el.rotation + 90) % 360 };
+      })
+    );
+  }, [selectedElementId]);
 
   // Update arrow/line position after drag
   const handleLineDragEnd = useCallback((id: string, deltaX: number, deltaY: number) => {
@@ -330,7 +366,11 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
     }
   }, [exportToImage]);
 
-  const isDraggable = selectedTool === 'select' && !readOnly;
+  const isDraggable = !readOnly;
+
+  // Check if selected element is a minigoal (for showing rotate button)
+  const selectedElement = elements.find(el => el.id === selectedElementId);
+  const hasMinigoalSelected = selectedElement?.type === 'minigoal';
 
   return (
     <div
@@ -354,6 +394,8 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
           onDeleteSelected={handleDeleteSelected}
           onClearAll={handleClearAll}
           hasSelection={!!selectedElementId}
+          hasMinigoalSelected={hasMinigoalSelected}
+          onRotateSelected={handleRotateSelected}
           pitchView={pitchView}
           onPitchViewChange={setPitchView}
         />
@@ -405,6 +447,17 @@ export const TacticsBoard: React.FC<TacticsBoardProps> = ({
                 case 'cone':
                   return (
                     <ConeElement
+                      key={element.id}
+                      element={element}
+                      isSelected={selectedElementId === element.id}
+                      onSelect={() => setSelectedElementId(element.id)}
+                      onDragEnd={(x, y) => handleElementDragEnd(element.id, x, y)}
+                      draggable={isDraggable}
+                    />
+                  );
+                case 'minigoal':
+                  return (
+                    <MinigoalElement
                       key={element.id}
                       element={element}
                       isSelected={selectedElementId === element.id}

@@ -71,30 +71,34 @@ export function WeeklyCalendar({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.lg }}>
-      {/* Weeks */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={syllabus.weeks.map((w) => w.id)}
-          strategy={verticalListSortingStrategy}
+      {/* Scrollable weeks container */}
+      <div style={{ overflowX: 'auto' }}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
         >
-          {syllabus.weeks.map((week) => (
-            <SortableWeekRow
-              key={week.id}
-              week={week}
-              onDayClick={(dayOfWeek) => onDayClick(week.id, dayOfWeek)}
-              onRemoveWeek={() => onRemoveWeek(week.id)}
-              canRemove={canRemoveWeek && !readOnly}
-              readOnly={readOnly}
-            />
-          ))}
-        </SortableContext>
-      </DndContext>
+          <SortableContext
+            items={syllabus.weeks.map((w) => w.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.lg, minWidth: 'fit-content' }}>
+              {syllabus.weeks.map((week) => (
+                <SortableWeekRow
+                  key={week.id}
+                  week={week}
+                  onDayClick={(dayOfWeek) => onDayClick(week.id, dayOfWeek)}
+                  onRemoveWeek={() => onRemoveWeek(week.id)}
+                  canRemove={canRemoveWeek && !readOnly}
+                  readOnly={readOnly}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      </div>
 
-      {/* Add Week Button */}
+      {/* Add Week Button - stays fixed, doesn't scroll */}
       {!readOnly && (
         <button
           onClick={onAddWeek}
@@ -111,6 +115,7 @@ export function WeeklyCalendar({
             fontSize: theme.typography.fontSize.sm,
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            width: '100%',
           }}
         >
           <FaPlus size={12} />

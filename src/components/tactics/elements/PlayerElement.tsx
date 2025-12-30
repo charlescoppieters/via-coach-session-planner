@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Circle, Text, Group } from 'react-konva';
+import { Circle, Group } from 'react-konva';
 import { PLAYER_RADIUS, type PlayerElement as PlayerElementType } from '../types';
 
 interface PlayerElementProps {
@@ -51,18 +51,6 @@ export const PlayerElement: React.FC<PlayerElementProps> = ({
         shadowBlur={4}
         shadowOpacity={0.3}
         shadowOffsetY={2}
-      />
-
-      {/* Player number */}
-      <Text
-        text={String(element.number)}
-        fontSize={element.number >= 10 ? 14 : 16}
-        fontStyle="bold"
-        fill="#FFFFFF"
-        align="center"
-        verticalAlign="middle"
-        offsetX={element.number >= 10 ? 8 : 5}
-        offsetY={element.number >= 10 ? 6 : 7}
       />
     </Group>
   );
