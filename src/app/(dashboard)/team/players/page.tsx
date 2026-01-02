@@ -11,6 +11,7 @@ import { useTeam } from '@/contexts/TeamContext'
 import { getPlayers, createPlayer, createPlayerIDPs } from '@/lib/players'
 import {
   getClubPositionalProfiles,
+  getTeamPositionalProfiles,
   getSystemDefaults,
   getInPossessionAttributes,
   getOutOfPossessionAttributes,
@@ -97,15 +98,22 @@ export default function PlayersPage() {
 
   // Fetch positions from positional profiles
   const fetchPositions = useCallback(async () => {
-    if (!club?.id) return
+    if (!club?.id || !selectedTeamId) return
 
-    // Get club positional profiles and system defaults in parallel
-    const [profilesRes, positionsRes, inPossRes, outPossRes] = await Promise.all([
-      getClubPositionalProfiles(club.id),
+    // Get system defaults and attributes in parallel
+    const [positionsRes, inPossRes, outPossRes] = await Promise.all([
       getSystemDefaults('positions'),
       getInPossessionAttributes(),
       getOutOfPossessionAttributes(),
     ])
+
+    // First try to get team-level positional profiles
+    let profilesRes = await getTeamPositionalProfiles(club.id, selectedTeamId)
+
+    // Fall back to club-level profiles if team has none
+    if (!profilesRes.data || profilesRes.data.length === 0) {
+      profilesRes = await getClubPositionalProfiles(club.id)
+    }
 
     const profiles = profilesRes.data
     const systemPositions = positionsRes.data
@@ -151,7 +159,7 @@ export default function PlayersPage() {
 
       setPositions(positionOptions)
     }
-  }, [club?.id])
+  }, [club?.id, selectedTeamId])
 
   useEffect(() => {
     fetchPositions()

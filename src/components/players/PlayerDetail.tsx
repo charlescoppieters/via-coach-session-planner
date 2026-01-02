@@ -5,6 +5,7 @@ import { isPositionalProfileAttributesV2 } from '@/types/database';
 import {
   getSystemDefaults,
   getClubPositionalProfiles,
+  getTeamPositionalProfiles,
   getInPossessionAttributes,
   getOutOfPossessionAttributes,
   SystemDefault,
@@ -55,12 +56,21 @@ export const PlayerDetail: React.FC<PlayerDetailProps> = ({ player, clubId, onUp
   // Fetch attributes and positions on mount
   useEffect(() => {
     const fetchData = async () => {
-      const [inPossRes, outPossRes, profilesRes, positionsRes] = await Promise.all([
+      if (!player?.team_id) return;
+
+      const [inPossRes, outPossRes, positionsRes] = await Promise.all([
         getInPossessionAttributes(),
         getOutOfPossessionAttributes(),
-        getClubPositionalProfiles(clubId),
         getSystemDefaults('positions'),
       ]);
+
+      // First try to get team-level positional profiles
+      let profilesRes = await getTeamPositionalProfiles(clubId, player.team_id);
+
+      // Fall back to club-level profiles if team has none
+      if (!profilesRes.data || profilesRes.data.length === 0) {
+        profilesRes = await getClubPositionalProfiles(clubId);
+      }
 
       if (inPossRes.data) {
         setInPossessionAttributes(inPossRes.data);
@@ -103,7 +113,7 @@ export const PlayerDetail: React.FC<PlayerDetailProps> = ({ player, clubId, onUp
       }
     };
     fetchData();
-  }, [clubId]);
+  }, [clubId, player?.team_id]);
 
   // Fetch IDPs when player changes
   useEffect(() => {

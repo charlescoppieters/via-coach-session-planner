@@ -27,6 +27,7 @@ import type {
 } from '@/types/database'
 import {
   getClubPositionalProfiles,
+  getTeamPositionalProfiles,
   getSystemDefaults,
   getInPossessionAttributes,
   getOutOfPossessionAttributes,
@@ -223,15 +224,22 @@ export default function PlayerDetailPage() {
 
   // Fetch positions from positional profiles
   const fetchPositions = useCallback(async () => {
-    if (!club?.id) return
+    if (!club?.id || !player?.team_id) return
 
-    // Get club positional profiles and system defaults in parallel
-    const [profilesRes, positionsRes, inPossRes, outPossRes] = await Promise.all([
-      getClubPositionalProfiles(club.id),
+    // Get system defaults and attributes in parallel
+    const [positionsRes, inPossRes, outPossRes] = await Promise.all([
       getSystemDefaults('positions'),
       getInPossessionAttributes(),
       getOutOfPossessionAttributes(),
     ])
+
+    // First try to get team-level positional profiles
+    let profilesRes = await getTeamPositionalProfiles(club.id, player.team_id)
+
+    // Fall back to club-level profiles if team has none
+    if (!profilesRes.data || profilesRes.data.length === 0) {
+      profilesRes = await getClubPositionalProfiles(club.id)
+    }
 
     const profiles = profilesRes.data
     const systemPositions = positionsRes.data
@@ -277,7 +285,7 @@ export default function PlayerDetailPage() {
 
       setPositions(positionOptions)
     }
-  }, [club?.id])
+  }, [club?.id, player?.team_id])
 
   useEffect(() => {
     fetchPositions()
